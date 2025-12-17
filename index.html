@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [GLOBAL ASSIST]</title>
+    <title>TNTU ENGINEERING SUITE v9.9 [HARDCORE LIST]</title>
     
     <style>
         :root {
@@ -228,7 +228,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.9 "GLOBAL ASSIST"
+ * TNTU ENGINEERING SUITE v9.9 "HARDCORE LIST"
  * ============================================================================
  */
 
@@ -245,8 +245,9 @@ const CONFIG = {
         LERP_FACTOR: 0.2, 
         SNAP_DISTANCE: 0.8,
         GRAB_RADIUS: 1.5,
-        BOB_SPEED: 0.002, 
-        BOB_HEIGHT: 0.001
+        BOB_SPEED: 2.0, 
+        BOB_HEIGHT: 0.15, 
+        REARRANGE_SPEED: 0.08 // Troshky shvydshe, schob bulo pomitnishe
     },
     INPUT: {
         PINCH_THRESHOLD_START: 0.04,
@@ -600,17 +601,21 @@ class GameLogic {
             const type = snap.userData.type;
             const part = ModelFactory.createPart(type);
             
+            // Calculate initial position
             const angle = (index / count) * Math.PI * 1.5 - Math.PI * 0.75;
             const radius = 4.0;
             const x = Math.sin(angle) * radius;
             const y = Math.cos(angle) * 2.0 + 1.5; 
             const z = 2.0; 
+            const pos = new THREE.Vector3(x, y, z);
             
-            part.position.set(x, y, z);
+            part.position.copy(pos);
             part.lookAt(0, 0, 10);
             
             part.userData.type = type;
             part.userData.isInstalled = false;
+            part.userData.inInventory = true; // NEW: Mark as part of the semi-circle list
+            part.userData.basePos = pos.clone();
             
             this.sg.floatingRoot.add(part);
             this.parts.push(part);
@@ -626,9 +631,9 @@ class GameLogic {
     checkSnap(part, partPos) {
         let bestSnap = null;
         
-        // --- UPDATED: GLOBAL AUTO AIM ASSIST ---
-        // Increased distance limit for ALL parts to 2.5
-        let minFound = 2.5;
+        // --- REDUCED HELP (40% less than 2.5) ---
+        // 2.5 * 0.6 = 1.5
+        let limit = 1; 
 
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
@@ -638,8 +643,8 @@ class GameLogic {
             snap.getWorldPosition(snapWorldPos);
             const dist = partPos.distanceTo(snapWorldPos);
             
-            if (dist < minFound) { 
-                minFound = dist; 
+            if (dist < limit) { 
+                limit = dist; 
                 bestSnap = snap; 
             }
         }
@@ -661,6 +666,26 @@ class GameLogic {
         });
     }
 
+    // --- REARRANGE PARTS (Only those still in Inventory) ---
+    rearrangeParts() {
+        // Only rearrange parts that are marked as being in the inventory list
+        const inventoryParts = this.parts.filter(p => p.userData.inInventory);
+        const count = inventoryParts.length;
+        
+        inventoryParts.forEach((part, index) => {
+            const angle = (index / count) * Math.PI * 1.5 - Math.PI * 0.75;
+            const radius = 4.0;
+            const x = Math.sin(angle) * radius;
+            const y = Math.cos(angle) * 2.0 + 1.5; 
+            const z = 2.0; 
+            
+            // Set new target base position
+            if (part.userData.basePos) {
+                part.userData.basePos.set(x, y, z);
+            }
+        });
+    }
+
     installPart(part, snap) {
         this.sg.floatingRoot.remove(part);
         this.sg.worldRoot.add(part);
@@ -668,8 +693,6 @@ class GameLogic {
         part.position.copy(snap.position);
         
         // --- FIX FOR GEARS AND WHEELS ORIENTATION ---
-        // Both wheels and gears have baked geometry rotation. 
-        // We set their object rotation to 0 to align them correctly on the X-axis axles.
         if (part.userData.type === 'wheel' || part.userData.type === 'gear') {
             part.rotation.set(0, 0, 0); 
         } else {
@@ -679,6 +702,7 @@ class GameLogic {
         part.userData.isInstalled = true;
         snap.userData.occupied = true;
         snap.visible = false;
+        
         this.installedCount++;
         this.updateCounter();
         Audio.sfxSnap();
@@ -781,6 +805,13 @@ class InputSystem {
                 this.state.grabbedObject = obj;
                 Audio.sfxGrab();
                 this.game.setHighlight(obj.userData.type, true);
+                
+                // --- NEW LOGIC: Remove from inventory list IMMEDIATELY upon grab ---
+                if (obj.userData.inInventory) {
+                    obj.userData.inInventory = false; // It's no longer in the circle
+                    obj.userData.basePos = null; // Stop trying to float back
+                    this.game.rearrangeParts(); // Shuffle the remaining parts
+                }
             }
         }
     }
@@ -797,6 +828,9 @@ class InputSystem {
             if (this.state.potentialSnap) {
                 this.game.installPart(this.state.grabbedObject, this.state.potentialSnap);
             }
+            // If dropping in void, do nothing special. It stays where dropped.
+            // Rearrange already happened on grab start.
+            
             this.state.grabbedObject = null;
             this.state.potentialSnap = null;
         }
@@ -854,12 +888,28 @@ class Application {
     loop() {
         requestAnimationFrame(() => this.loop());
         const t = Date.now() * 0.001;
-        this.sg.floatingRoot.children.forEach((c, i) => {
-            if(c !== this.input.state.grabbedObject) {
-                c.position.y += Math.sin(t+i)*CONFIG.PHYSICS.BOB_HEIGHT;
-                c.rotation.z += CONFIG.PHYSICS.BOB_SPEED;
+        
+        this.game.parts.forEach((c, i) => {
+            // Only animate parts that are IN INVENTORY
+            if (c.userData.inInventory && c.userData.basePos) {
+                
+                const bobOffset = Math.sin(t * CONFIG.PHYSICS.BOB_SPEED + i) * CONFIG.PHYSICS.BOB_HEIGHT;
+                const targetX = c.userData.basePos.x;
+                const targetY = c.userData.basePos.y + bobOffset;
+                const targetZ = c.userData.basePos.z;
+                
+                c.position.x += (targetX - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                c.position.y += (targetY - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                c.position.z += (targetZ - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                
+                c.rotation.z += 0.002;
+            } else if (!c.userData.isInstalled && c !== this.input.state.grabbedObject) {
+                // If it's floating in the void (dropped by user), just rotate it slowly
+                c.rotation.z += 0.002;
+                c.rotation.y += 0.001;
             }
         });
+        
         this.render();
     }
 }
