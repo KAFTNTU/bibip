@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>TNTU AR Constructor v5.0 [Car Assembler]</title>
+    
+    <style>
+        :root {
+            --primary: #00ffcc;
+            --accent: #ff0055;
+            --bg: #050505;
+            --font-ui: 'Segoe UI', system-ui, sans-serif;
+            --font-mono: 'Consolas', monospace;
+        }
+
+        body {
+            margin: 0; overflow: hidden; background-color: var(--bg);
+            font-family: var(--font-ui); color: var(--primary); user-select: none;
+        }
+
+        /* --- UI LOADER --- */
+        #boot-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #020202; z-index: 10000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        
+        .spinner {
+            width: 60px; height: 60px; border: 3px solid #333; border-top: 3px solid var(--accent);
+            border-radius: 50%; animation: rotate 1s infinite linear; margin-bottom: 24px;
+        }
+
+        #btn-init {
+            background: transparent; color: var(--primary); border: 1px solid var(--primary);
+            padding: 16px 48px; font-size: 14px; letter-spacing: 3px; text-transform: uppercase;
+            cursor: pointer; transition: all 0.2s;
+        }
+        #btn-init:hover { background: rgba(0, 255, 204, 0.1); box-shadow: 0 0 30px rgba(0, 255, 204, 0.2); }
+
+        /* --- VIEWPORT --- */
+        #viewport { position: relative; width: 100vw; height: 100vh; }
+        #cam-feed {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; transform: scaleX(-1);
+            filter: grayscale(0.4) contrast(1.1) brightness(0.6); z-index: 0;
+        }
+        #ar-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+
+        /* --- HUD --- */
+        #hud-layer {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 600px; z-index: 20; text-align: center; pointer-events: none;
+        }
+
+        .hud-panel {
+            background: rgba(10, 10, 15, 0.9); border: 1px solid var(--primary);
+            padding: 15px; border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+        }
+
+        .task-title { font-size: 12px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; }
+        .progress-bar {
+            height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%; width: 0%; background: var(--primary); transition: width 0.3s;
+        }
+        .instruction { font-size: 18px; color: #fff; font-weight: bold; }
+        
+        .win-msg {
+            color: #00ff00; font-size: 24px; font-weight: bold; 
+            text-shadow: 0 0 15px #00ff00; display: none; margin-top: 10px;
+        }
+
+        @keyframes rotate { 100% { transform: rotate(360deg); } }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</head>
+<body>
+
+    <div id="boot-screen">
+        <div class="spinner"></div>
+        <div style="margin-bottom: 20px; color: #aaa;">ЗАВАНТАЖЕННЯ КОНСТРУКТОРА...</div>
+        <button id="btn-init">ПОЧАТИ ЗБІРКУ</button>
+    </div>
+
+    <div id="viewport">
+        <video id="cam-feed" playsinline muted></video>
+        <canvas id="ar-overlay"></canvas>
+
+        <div id="hud-layer">
+            <div class="hud-panel">
+                <div class="task-title">ЕТАП ЗБІРКИ</div>
+                <div class="progress-bar"><div class="progress-fill" id="prog-fill"></div></div>
+                <div class="instruction" id="instr-text">Перетягніть КОЛЕСА на місця</div>
+                <div class="win-msg" id="win-text">МАШИНА ЗІБРАНА! 🚗💨</div>
+            </div>
+        </div>
+    </div>
+
+<script>
+/**
+ * ============================================================================
+ * TNTU AR CONSTRUCTOR v5.0 - "Physics & Drag-Drop Kernel"
+ * ============================================================================
+ */
+
+const CONFIG = {
+    CORE: { WIDTH: 1280, HEIGHT: 720 },
+    // Фільтр для плавності перетягування
+    FILTER: { FREQUENCY: 60, MIN_CUTOFF: 1.0, BETA: 0.01, D_CUTOFF: 1.0 },
+    INPUT: {
+        PINCH_THRESHOLD: 0.04,
+        PINCH_RELEASE: 0.05,
+        SENSITIVITY: 1.5, // Чутливість курсору
+        GRAB_DISTANCE: 1.5 // Радіус, в якому можна схопити деталь (в 3D одиницях)
+    },
+    COLORS: {
+        CURSOR_OPEN: 0xff0000,
+        CURSOR_GRAB: 0x00aaff, // Синій коли тримаємо
+        GHOST: 0x004433,      // Колір місця посадки
+        GHOST_ACTIVE: 0x00ff00 // Колір коли навели правильно
+    }
+};
+
+// --- 1. MATH UTILS (1€ Filter) ---
+class LowPassFilter {
+    constructor(alpha) { this.setAlpha(alpha); this.y = null; this.s = null; }
+    setAlpha(alpha) { this.alpha = alpha; }
+    filter(value, timestamp, alpha) {
+        if (alpha) this.setAlpha(alpha);
+        if (this.y === null) { this.s = value; } else { this.s = this.alpha * value + (1.0 - this.alpha) * this.s; }
+        this.y = this.s; return this.y;
+    }
+    lastValue() { return this.y; }
+}
+class OneEuroFilter {
+    constructor(freq, minCutoff = 1.0, beta = 0.0, dCutoff = 1.0) {
+        this.freq = freq; this.minCutoff = minCutoff; this.beta = beta; this.dCutoff = dCutoff;
+        this.x = new LowPassFilter(this.alpha(minCutoff));
+        this.dx = new LowPassFilter(this.alpha(dCutoff));
+        this.lastTime = null;
+    }
+    alpha(cutoff) {
+        const te = 1.0 / this.freq; const tau = 1.0 / (2 * Math.PI * cutoff); return 1.0 / (1.0 + tau / te);
+    }
+    filter(value, timestamp) {
+        if (this.lastTime && timestamp) { this.freq = 1.0 / (timestamp - this.lastTime); }
+        this.lastTime = timestamp;
+        const prevX = this.x.lastValue();
+        const dx = (prevX === null) ? 0 : (value - prevX) * this.freq;
+        const edx = this.dx.filter(dx, timestamp, this.alpha(this.dCutoff));
+        const cutoff = this.minCutoff + this.beta * Math.abs(edx);
+        return this.x.filter(value, timestamp, this.alpha(cutoff));
+    }
+}
+class Vector3Filter {
+    constructor(config) {
+        this.fX = new OneEuroFilter(config.FREQUENCY, config.MIN_CUTOFF, config.BETA, config.D_CUTOFF);
+        this.fY = new OneEuroFilter(config.FREQUENCY, config.MIN_CUTOFF, config.BETA, config.D_CUTOFF);
+        this.fZ = new OneEuroFilter(config.FREQUENCY, config.MIN_CUTOFF, config.BETA, config.D_CUTOFF);
+    }
+    process(vec3, time) {
+        return new THREE.Vector3(this.fX.filter(vec3.x, time), this.fY.filter(vec3.y, time), this.fZ.filter(vec3.z, time));
+    }
+}
+const Utils = {
+    getDistance2D: (p1, p2, aspect) => {
+        const dx = (p1.x - p2.x) * aspect; const dy = p1.y - p2.y; return Math.sqrt(dx * dx + dy * dy);
+    },
+    projectLandmark: (lm, camera, zDepth) => {
+        const sens = CONFIG.INPUT.SENSITIVITY;
+        const ndc_x = ((1 - lm.x) * 2 - 1) * sens;
+        const ndc_y = (-lm.y * 2 + 1) * sens;
+        const vec = new THREE.Vector3(ndc_x, ndc_y, 0.5);
+        vec.unproject(camera);
+        const dir = vec.sub(camera.position).normalize();
+        const distance = (zDepth + 1 - camera.position.z) / dir.z;
+        return camera.position.clone().add(dir.multiplyScalar(distance));
+    }
+};
+
+// --- 2. GAME OBJECTS: PARTS & SNAPS ---
+class SnapZone {
+    constructor(scene, position, type) {
+        this.position = position;
+        this.type = type; // 'wheel' or 'cabin'
+        this.isOccupied = false;
+
+        // Visual "Ghost"
+        let geo;
+        if (type === 'wheel') {
+            geo = new THREE.CylinderGeometry(0.4, 0.4, 0.2, 32);
+            geo.rotateX(Math.PI / 2);
+        } else {
+            geo = new THREE.BoxGeometry(1.5, 0.8, 2.5);
+        }
+
+        this.material = new THREE.MeshBasicMaterial({
+            color: CONFIG.COLORS.GHOST,
+            transparent: true,
+            opacity: 0.3,
+            wireframe: true
+        });
+
+        this.mesh = new THREE.Mesh(geo, this.material);
+        this.mesh.position.copy(position);
+        scene.add(this.mesh);
+    }
+
+    highlight(isActive) {
+        if (this.isOccupied) return;
+        this.material.color.setHex(isActive ? CONFIG.COLORS.GHOST_ACTIVE : CONFIG.COLORS.GHOST);
+        this.material.opacity = isActive ? 0.6 : 0.3;
+    }
+
+    occupy() {
+        this.isOccupied = true;
+        this.mesh.visible = false; // Сховати привид, коли деталь на місці
+    }
+}
+
+class CarPart {
+    constructor(scene, type, startPos) {
+        this.type = type;
+        this.isGrabbed = false;
+        this.isInstalled = false;
+        
+        // 3D Model Construction
+        this.mesh = new THREE.Group();
+        this.mesh.position.copy(startPos);
+
+        if (type === 'wheel') {
+            // Tire
+            const tireGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.2, 32);
+            tireGeo.rotateX(Math.PI / 2);
+            const tireMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+            const tire = new THREE.Mesh(tireGeo, tireMat);
+            
+            // Rim
+            const rimGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.21, 16);
+            rimGeo.rotateX(Math.PI / 2);
+            const rimMat = new THREE.MeshPhongMaterial({ color: 0xdddddd });
+            const rim = new THREE.Mesh(rimGeo, rimMat);
+
+            this.mesh.add(tire);
+            this.mesh.add(rim);
+        } else if (type === 'cabin') {
+            // Main Body
+            const bodyGeo = new THREE.BoxGeometry(1.5, 0.8, 2.5);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0x0066cc, shininess: 100 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            
+            // Roof
+            const roofGeo = new THREE.BoxGeometry(1.4, 0.6, 1.5);
+            const roofMat = new THREE.MeshPhongMaterial({ color: 0x111111 }); // Glass
+            const roof = new THREE.Mesh(roofGeo, roofMat);
+            roof.position.y = 0.7;
+
+            this.mesh.add(body);
+            this.mesh.add(roof);
+        }
+
+        // Add collider for raycasting
+        const colliderGeo = new THREE.BoxGeometry(1, 1, 1);
+        const colliderMat = new THREE.MeshBasicMaterial({ visible: false });
+        this.collider = new THREE.Mesh(colliderGeo, colliderMat);
+        if (type === 'cabin') this.collider.scale.set(2, 2, 3);
+        this.mesh.add(this.collider);
+        this.collider.userData = { part: this };
+
+        scene.add(this.mesh);
+    }
+
+    updatePosition(targetPos) {
+        if (this.isInstalled) return;
+        // Плавний рух до курсору
+        this.mesh.position.lerp(targetPos, 0.2);
+        // Легка ротація при перетягуванні для ефекту
+        if (this.isGrabbed) {
+            this.mesh.rotation.z = Math.sin(Date.now() * 0.005) * 0.2;
+            this.mesh.rotation.x = Math.cos(Date.now() * 0.005) * 0.2;
+        } else {
+            this.mesh.rotation.set(0, 0, 0);
+        }
+    }
+
+    install(snapPos) {
+        this.isGrabbed = false;
+        this.isInstalled = true;
+        this.mesh.position.copy(snapPos);
+        this.mesh.rotation.set(0, 0, 0);
+        // Ефект встановлення (анімація)
+        const s = this.mesh.scale;
+        this.mesh.scale.set(s.x*1.2, s.y*1.2, s.z*1.2); // Jump
+        setTimeout(() => this.mesh.scale.set(1,1,1), 200);
+    }
+}
+
+// --- 3. CONSTRUCTOR MANAGER ---
+class ConstructorManager {
+    constructor(scene) {
+        this.scene = scene;
+        this.parts = [];
+        this.snapZones = [];
+        this.installedCount = 0;
+        this.totalParts = 5; // 4 wheels + 1 cabin
+
+        this.initScene();
+    }
+
+    initScene() {
+        // Base Chassis (Static) - Рама машини
+        const chassisGeo = new THREE.BoxGeometry(1.4, 0.3, 3.8);
+        const chassisMat = new THREE.MeshPhongMaterial({ color: 0x333333 });
+        this.chassis = new THREE.Mesh(chassisGeo, chassisMat);
+        this.chassis.position.set(0, -1, -6); // Центр сцени
+        this.scene.add(this.chassis);
+
+        // Snap Zones (Positions relative to chassis)
+        // Wheels
+        this.createSnapZone(new THREE.Vector3(-0.9, -1, -7.2), 'wheel'); // Front Left
+        this.createSnapZone(new THREE.Vector3( 0.9, -1, -7.2), 'wheel'); // Front Right
+        this.createSnapZone(new THREE.Vector3(-0.9, -1, -4.8), 'wheel'); // Back Left
+        this.createSnapZone(new THREE.Vector3( 0.9, -1, -4.8), 'wheel'); // Back Right
+        // Cabin
+        this.createSnapZone(new THREE.Vector3(0, -0.4, -6), 'cabin');
+
+        // Parts (Scattered around)
+        // Wheels
+        this.createPart('wheel', new THREE.Vector3(-2.5, 1, -5));
+        this.createPart('wheel', new THREE.Vector3( 2.5, 1, -5));
+        this.createPart('wheel', new THREE.Vector3(-2.5, -2, -5));
+        this.createPart('wheel', new THREE.Vector3( 2.5, -2, -5));
+        // Cabin
+        this.createPart('cabin', new THREE.Vector3(0, 2, -5));
+    }
+
+    createSnapZone(pos, type) {
+        this.snapZones.push(new SnapZone(this.scene, pos, type));
+    }
+
+    createPart(type, pos) {
+        this.parts.push(new CarPart(this.scene, type, pos));
+    }
+
+    checkSnapping(part) {
+        // Find closest valid snap zone
+        let closestZone = null;
+        let minDist = 1.0; // Snapping radius
+
+        for (const zone of this.snapZones) {
+            if (!zone.isOccupied && zone.type === part.type) {
+                const dist = part.mesh.position.distanceTo(zone.position);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestZone = zone;
+                }
+                zone.highlight(false); // Reset highlight
+            }
+        }
+
+        if (closestZone) {
+            closestZone.highlight(true); // Highlight valid target
+            return closestZone;
+        }
+        return null;
+    }
+
+    installPart(part, zone) {
+        if (part && zone) {
+            part.install(zone.position);
+            zone.occupy();
+            this.installedCount++;
+            this.updateUI();
+        }
+    }
+
+    updateUI() {
+        const percent = (this.installedCount / this.totalParts) * 100;
+        document.getElementById('prog-fill').style.width = percent + '%';
+        
+        if (this.installedCount === this.totalParts) {
+            document.getElementById('instr-text').style.display = 'none';
+            document.getElementById('win-text').style.display = 'block';
+            // Confetti effect logic could go here
+            if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+        }
+    }
+
+    getInteractables() {
+        // Return only colliders of non-installed parts
+        return this.parts.filter(p => !p.isInstalled).map(p => p.collider);
+    }
+}
+
+// --- 4. ENGINE ---
+class Engine {
+    constructor() {
+        this.video = document.getElementById('cam-feed');
+        this.canvas = document.getElementById('ar-overlay');
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+        this.camera.position.z = 5;
+        
+        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        // Lights
+        const ambi = new THREE.AmbientLight(0xffffff, 0.7);
+        const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+        dir.position.set(5, 10, 7);
+        this.scene.add(ambi, dir);
+
+        // Systems
+        this.manager = new ConstructorManager(this.scene);
+        this.cursor = this.createCursor();
+        this.raycaster = new THREE.Raycaster();
+        this.filterIndex = new Vector3Filter(CONFIG.FILTER);
+        this.filterThumb = new Vector3Filter(CONFIG.FILTER);
+        
+        this.isPinching = false;
+        this.grabbedPart = null;
+        this.potentialSnap = null;
+
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    createCursor() {
+        const group = new THREE.Group();
+        // Dot
+        const dot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.025, 32, 32),
+            new THREE.MeshBasicMaterial({ color: CONFIG.COLORS.CURSOR_OPEN, depthTest: false })
+        );
+        // Brackets
+        const ringGeo = new THREE.RingGeometry(0.05, 0.06, 32, 1, 0, Math.PI);
+        const ringMat = new THREE.MeshBasicMaterial({ color: CONFIG.COLORS.CURSOR_OPEN, side: THREE.DoubleSide, depthTest: false });
+        const left = new THREE.Mesh(ringGeo, ringMat); left.rotation.z = Math.PI/2;
+        const right = new THREE.Mesh(ringGeo, ringMat); right.rotation.z = -Math.PI/2;
+        
+        group.add(dot, left, right);
+        group.userData = { dot, left, right, mat: ringMat };
+        this.scene.add(group);
+        return group;
+    }
+
+    start() {
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.onResults(this.onHandResults.bind(this));
+        const cam = new Camera(this.video, { onFrame: async () => await hands.send({image: this.video}), width: 1280, height: 720 });
+        cam.start();
+        this.animate();
+    }
+
+    onHandResults(results) {
+        if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+            this.cursor.visible = false; return;
+        }
+        this.cursor.visible = true;
+
+        const lm = results.multiHandLandmarks[0];
+        const now = performance.now() / 1000;
+        
+        // 1. Calc Position
+        const rawIdx = Utils.projectLandmark(lm[8], this.camera, -5); // Depth -5 (near chassis)
+        const rawThb = Utils.projectLandmark(lm[4], this.camera, -5);
+        const smIdx = this.filterIndex.process(rawIdx, now);
+        const smThb = this.filterThumb.process(rawThb, now);
+        const center = new THREE.Vector3().addVectors(smIdx, smThb).multiplyScalar(0.5);
+        
+        // 2. Move Cursor
+        this.cursor.position.copy(center);
+        
+        // 3. Pinch Logic
+        const aspect = window.innerWidth / window.innerHeight;
+        const dist2D = Utils.getDistance2D(lm[8], lm[4], aspect);
+        const threshold = this.isPinching ? CONFIG.INPUT.PINCH_RELEASE : CONFIG.INPUT.PINCH_THRESHOLD;
+        const isClosed = dist2D < threshold;
+
+        // 4. Interaction State Machine
+        if (isClosed && !this.isPinching) {
+            // GRAB START
+            if (!this.grabbedPart) {
+                this.tryGrab(center);
+            }
+        } else if (!isClosed && this.isPinching) {
+            // RELEASE (DROP)
+            if (this.grabbedPart) {
+                this.manager.installPart(this.grabbedPart, this.potentialSnap);
+                this.grabbedPart.isGrabbed = false;
+                this.grabbedPart = null;
+                this.potentialSnap = null;
+            }
+        }
+
+        // 5. Dragging Logic
+        if (this.grabbedPart) {
+            this.grabbedPart.updatePosition(center);
+            this.potentialSnap = this.manager.checkSnapping(this.grabbedPart);
+        }
+
+        this.updateCursorVisuals(isClosed);
+        this.isPinching = isClosed;
+    }
+
+    tryGrab(cursorPos) {
+        // Raycast from camera through cursor position
+        const screenPos = cursorPos.clone().project(this.camera);
+        this.raycaster.setFromCamera(new THREE.Vector2(screenPos.x, screenPos.y), this.camera);
+        
+        const intersects = this.raycaster.intersectObjects(this.manager.getInteractables());
+        
+        if (intersects.length > 0) {
+            this.grabbedPart = intersects[0].object.userData.part;
+            this.grabbedPart.isGrabbed = true;
+            if (navigator.vibrate) navigator.vibrate(20);
+        }
+    }
+
+    updateCursorVisuals(isClosed) {
+        const color = isClosed ? CONFIG.COLORS.CURSOR_GRAB : CONFIG.COLORS.CURSOR_OPEN;
+        const offset = isClosed ? 0 : 0.06;
+        
+        this.cursor.userData.left.position.x = -offset;
+        this.cursor.userData.right.position.x = offset;
+        this.cursor.userData.dot.material.color.setHex(color);
+        this.cursor.userData.mat.color.setHex(color);
+    }
+
+    animate() {
+        requestAnimationFrame(this.animate.bind(this));
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+document.getElementById('btn-init').addEventListener('click', () => {
+    document.getElementById('boot-screen').style.opacity = '0';
+    setTimeout(() => {
+        document.getElementById('boot-screen').style.display = 'none';
+        new Engine().start();
+    }, 500);
+});
+
+</script>
+</body>
+</html>
