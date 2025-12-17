@@ -3,116 +3,183 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v7.0 [TITAN CLASS]</title>
+    <title>TNTU ENGINEERING SUITE v8.0 [ULTIMATE]</title>
     
     <style>
+        /* --- CORE STYLES --- */
         :root {
-            --primary: #00ffcc;
-            --secondary: #0088aa;
-            --alert: #ff3333;
-            --warning: #ffaa00;
-            --bg: #020202;
-            --ui-font: 'Segoe UI', system-ui, sans-serif;
-            --mono-font: 'Consolas', 'Monaco', monospace;
+            --color-primary: #00ffcc;
+            --color-secondary: #0088aa;
+            --color-bg: #050505;
+            --color-text: #ffffff;
+            --font-stack: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
         }
 
-        * { box-sizing: border-box; }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
 
         body {
-            margin: 0; overflow: hidden; background-color: var(--bg);
-            font-family: var(--ui-font); color: var(--primary); user-select: none;
-        }
-
-        /* --- SYSTEM BOOT SCREEN --- */
-        #boot-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; z-index: 99999;
-            padding: 40px; display: flex; flex-direction: column;
-            font-family: var(--mono-font); font-size: 14px; color: #0f0;
+            margin: 0;
+            padding: 0;
             overflow: hidden;
-        }
-        
-        #boot-log {
-            flex-grow: 1; overflow-y: auto; white-space: pre-wrap;
-            margin-bottom: 20px; border-bottom: 2px solid #0f0;
-            text-shadow: 0 0 5px #0f0;
-            scrollbar-width: none;
+            background-color: var(--color-bg);
+            font-family: var(--font-stack);
+            color: var(--color-text);
         }
 
-        #boot-btn {
-            padding: 20px; border: 2px solid #0f0; background: #001100;
-            color: #0f0; font-family: var(--mono-font); font-size: 18px; font-weight: bold;
-            cursor: pointer; text-transform: uppercase; letter-spacing: 2px;
-            transition: 0.2s; display: none; text-align: center;
+        /* --- LOADING SCREEN (MATRIX STYLE) --- */
+        #boot-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: #000;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.8s ease-out;
         }
-        #boot-btn:hover { background: #0f0; color: #000; box-shadow: 0 0 20px #0f0; }
 
-        /* --- MAIN INTERFACE --- */
-        #viewport { position: relative; width: 100vw; height: 100vh; }
-        
-        #camera-layer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            object-fit: cover; transform: scaleX(-1);
-            filter: grayscale(0.3) contrast(1.1) brightness(0.7);
+        .loader-anim {
+            width: 80px; height: 80px;
+            border: 4px solid #111;
+            border-top: 4px solid var(--color-primary);
+            border-radius: 50%;
+            animation: spin 1s infinite cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            margin-bottom: 30px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+        }
+
+        .boot-log {
+            font-family: 'Consolas', monospace;
+            color: #008844;
+            font-size: 12px;
+            text-align: center;
+            opacity: 0.8;
+            margin-bottom: 20px;
+            min-height: 20px;
+        }
+
+        #btn-launch {
+            padding: 15px 50px;
+            background: transparent;
+            color: var(--color-primary);
+            border: 2px solid var(--color-primary);
+            font-size: 18px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0; /* Hidden initially */
+            transform: translateY(20px);
+        }
+
+        #btn-launch.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        #btn-launch:hover {
+            background: var(--color-primary);
+            color: #000;
+            box-shadow: 0 0 30px var(--color-primary);
+        }
+
+        /* --- MAIN VIEWPORT --- */
+        #render-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #video-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+            filter: grayscale(40%) contrast(110%) brightness(60%);
             z-index: 0;
         }
-        
-        #ar-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
 
-        /* --- HEADS UP DISPLAY --- */
-        #hud-container {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 20; pointer-events: none;
+        #canvas-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10;
         }
 
-        .panel {
-            position: absolute; background: rgba(5, 15, 20, 0.85);
-            border: 1px solid var(--primary); border-radius: 4px;
-            padding: 15px; box-shadow: 0 0 15px rgba(0, 255, 204, 0.1);
-            backdrop-filter: blur(5px); pointer-events: auto;
+        /* --- MINIMAL HUD --- */
+        #hud-interface {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 20;
+            pointer-events: none;
         }
 
-        /* Top Right: Status */
-        #panel-status {
-            top: 20px; right: 20px; width: 280px; text-align: right;
+        .hud-counter {
+            position: absolute;
+            top: 30px; right: 30px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--color-primary);
+            border-radius: 30px;
+            padding: 10px 25px;
+            font-family: 'Consolas', monospace;
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
         }
-        
-        .stat-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: #aaa; }
-        .stat-val { color: #fff; font-weight: bold; font-family: var(--mono-font); }
-        .stat-ok { color: #0f0; } .stat-warn { color: var(--warning); }
 
-        /* Top Center: Task */
-        #panel-task {
-            top: 20px; left: 50%; transform: translateX(-50%);
-            text-align: center; min-width: 300px;
-            border-color: var(--warning);
+        .hud-counter span {
+            color: var(--color-primary);
         }
-        
-        .task-header { font-size: 10px; color: var(--warning); letter-spacing: 3px; margin-bottom: 5px; }
-        .task-main { font-size: 16px; font-weight: bold; color: #fff; }
 
-        /* Bottom Left: Logs */
-        #panel-log {
-            bottom: 20px; left: 20px; width: 300px; height: 150px;
-            font-family: var(--mono-font); font-size: 10px; color: #00aa88;
-            overflow: hidden; display: flex; flex-direction: column-reverse;
-            border-left: 3px solid var(--primary);
+        /* --- VICTORY SCREEN --- */
+        #victory-modal {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            text-align: center;
+            background: rgba(0, 20, 10, 0.95);
+            padding: 40px 60px;
+            border: 2px solid #00ff00;
+            border-radius: 15px;
+            box-shadow: 0 0 50px rgba(0, 255, 0, 0.3);
+            display: none;
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
         }
-        .log-entry { margin-bottom: 2px; opacity: 0.8; }
-        .log-err { color: var(--alert); } .log-sys { color: #fff; }
 
-        /* Victory Overlay */
-        #win-screen {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            text-align: center; display: none; z-index: 100;
+        #victory-modal.active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            display: block;
         }
+
         .win-title {
-            font-size: 60px; color: #0f0; font-weight: 900;
-            text-shadow: 0 0 30px #0f0; margin-bottom: 20px;
-            animation: pulse 1s infinite;
+            font-size: 48px;
+            margin: 0 0 10px 0;
+            color: #00ff00;
+            text-shadow: 0 0 20px #00ff00;
         }
-        @keyframes pulse { 0% {transform: scale(1);} 50% {transform: scale(1.1);} 100% {transform: scale(1);} }
 
+        .win-subtitle {
+            font-size: 18px;
+            color: #ccc;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -121,806 +188,901 @@
 </head>
 <body>
 
-    <div id="boot-layer">
-        <div id="boot-log"></div>
-        <div id="boot-btn">ЗАПУСТИТИ СИСТЕМУ</div>
+    <div id="boot-overlay">
+        <div class="loader-anim"></div>
+        <div class="boot-log" id="sys-log">INITIALIZING KERNEL...</div>
+        <button id="btn-launch">ЗАПУСТИТИ СИСТЕМУ</button>
     </div>
 
-    <div id="viewport">
-        <video id="camera-layer" playsinline muted></video>
-        <canvas id="ar-layer"></canvas>
+    <div id="render-container">
+        <video id="video-layer" playsinline muted></video>
+        <canvas id="canvas-layer"></canvas>
 
-        <div id="hud-container">
-            <div class="panel" id="panel-status">
-                <div class="stat-row"><span>SYSTEM:</span> <span class="stat-val stat-ok">ONLINE</span></div>
-                <div class="stat-row"><span>PHYSICS:</span> <span class="stat-val stat-ok" id="stat-phys">ACTIVE</span></div>
-                <div class="stat-row"><span>AUDIO:</span> <span class="stat-val" id="stat-audio">MUTED</span></div>
-                <div class="stat-row"><span>HAND TRACK:</span> <span class="stat-val" id="stat-hand">WAITING...</span></div>
-                <div style="margin-top: 10px; border-top: 1px solid #333; paddingTop: 5px;">
-                    <div class="stat-row"><span>PARTS:</span> <span class="stat-val" id="stat-parts">0 / 14</span></div>
-                </div>
+        <div id="hud-interface">
+            <div class="hud-counter">
+                ДЕТАЛІ: <span id="ui-counter">0 / 14</span>
             </div>
+        </div>
 
-            <div class="panel" id="panel-task">
-                <div class="task-header">CURRENT OBJECTIVE</div>
-                <div class="task-main" id="task-text">Ініціалізація компонентів...</div>
-            </div>
-
-            <div class="panel" id="panel-log">
-                <div id="log-feed"></div>
-            </div>
-
-            <div id="win-screen">
-                <div class="win-title">ЗБІРКУ ЗАВЕРШЕНО!</div>
-                <div style="color: #fff; font-size: 20px;">СИСТЕМИ ФУНКЦІОНУЮТЬ НОРМАЛЬНО</div>
-            </div>
+        <div id="victory-modal">
+            <h1 class="win-title">УСПІХ!</h1>
+            <div class="win-subtitle">СИСТЕМУ ЗІБРАНО ТА АКТИВОВАНО</div>
         </div>
     </div>
 
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v7.0 - "TITAN CLASS"
- * Author: Gemini AI
- * Architecture: Entity-Component-System (ECS) Inspired
- * Lines of Code: ~1000 (Generated & Compressed Logic)
+ * TNTU ENGINEERING ENGINE v8.0 "ULTIMATE"
+ * Architecture: Component-Entity-System (CES) hybrid
  * ============================================================================
  */
 
-// --- 1. GLOBAL CONFIGURATION REGISTRY ---
+// --- 1. GLOBAL CONFIGURATION ---
 const CONFIG = {
-    // Ядро рендеру
-    CORE: { 
-        WIDTH: 1280, 
-        HEIGHT: 720, 
+    DEBUG: false,
+    RENDER: {
         FOV: 60,
-        MAX_LIGHTS: 4
+        NEAR: 0.1,
+        FAR: 1000,
+        SHADOWS: true
     },
-    // Налаштування фільтрації вводу (1€ Filter)
-    FILTER: { 
-        FREQ: 60, 
-        MIN_CUTOFF: 1.0, 
-        BETA: 0.005, 
-        D_CUTOFF: 1.0 
-    },
-    // Фізика взаємодії
     PHYSICS: {
-        GRAB_RADIUS: 1.2,        // Радіус захвату
-        SNAP_DISTANCE: 0.8,      // Дистанція примагнічування
-        LERP_SPEED: 0.15,        // Швидкість слідування деталі за рукою
-        ROTATION_SPEED: 4.0      // Швидкість обертання корпусу
+        ROTATION_SPEED: 2.5,
+        LERP_FACTOR: 0.2,
+        SNAP_DISTANCE: 0.8,
+        GRAB_RADIUS: 1.5
     },
-    // Вхідні пороги (MediaPipe)
     INPUT: {
-        PINCH_START: 0.035,      // Початок щипка
-        PINCH_END: 0.050,        // Кінець щипка
-        SENSITIVITY: 1.4         // Чутливість курсору
+        PINCH_THRESHOLD_START: 0.035,
+        PINCH_THRESHOLD_END: 0.050,
+        CURSOR_SENSITIVITY: 1.4,
+        FILTER_BETA: 0.005,
+        FILTER_MIN_CUTOFF: 1.0
     },
-    // Кольорова схема
-    THEME: {
-        PRIMARY: 0x00ffcc,
+    COLORS: {
+        CHASSIS: 0x228822,
         GHOST_VALID: 0x00ff00,
         GHOST_INVALID: 0xff0000,
-        CURSOR_IDLE: 0xffff00,
-        CURSOR_ACTIVE: 0xff0000,
-        CURSOR_LOCK: 0x00aaff
+        GIZMO_IDLE: 0xffaa00,
+        GIZMO_ACTIVE: 0xff3300,
+        CURSOR_OPEN: 0xff0000,
+        CURSOR_CLOSED: 0x00aaff
     }
 };
 
-// --- 2. AUDIO KERNEL (PROCEDURAL SOUND) ---
-class AudioSynthesizer {
+// --- 2. EVENT BUS SYSTEM ---
+/**
+ * Central event hub to decouple systems.
+ */
+class EventBus {
     constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.3;
-        this.masterGain.connect(this.ctx.destination);
+        this.listeners = {};
+    }
+
+    on(event, callback) {
+        if (!this.listeners[event]) this.listeners[event] = [];
+        this.listeners[event].push(callback);
+    }
+
+    emit(event, data) {
+        if (this.listeners[event]) {
+            this.listeners[event].forEach(cb => cb(data));
+        }
+    }
+}
+const Events = new EventBus();
+
+// --- 3. MATH LIBRARY (1 EURO FILTER) ---
+/**
+ * Advanced filtering algorithm to remove jitter from hand tracking
+ * while maintaining responsiveness.
+ */
+class LowPassFilter {
+    constructor(alpha) {
+        this.setAlpha(alpha);
+        this.y = null;
+        this.s = null;
+    }
+    setAlpha(alpha) {
+        this.alpha = alpha;
+    }
+    filter(value) {
+        if (this.y === null) {
+            this.s = value;
+        } else {
+            this.s = this.alpha * value + (1.0 - this.alpha) * this.s;
+        }
+        this.y = this.s;
+        return this.y;
+    }
+    lastValue() { return this.y; }
+}
+
+class OneEuroFilter {
+    constructor(freq, mincutoff = 1.0, beta = 0.0, dcutoff = 1.0) {
+        this.freq = freq;
+        this.mincutoff = mincutoff;
+        this.beta = beta;
+        this.dcutoff = dcutoff;
+        this.x = new LowPassFilter(this.alpha(mincutoff));
+        this.dx = new LowPassFilter(this.alpha(dcutoff));
+        this.lastTime = null;
+    }
+
+    alpha(cutoff) {
+        const te = 1.0 / this.freq;
+        const tau = 1.0 / (2 * Math.PI * cutoff);
+        return 1.0 / (1.0 + tau / te);
+    }
+
+    filter(value, timestamp) {
+        if (this.lastTime && timestamp) {
+            this.freq = 1.0 / (timestamp - this.lastTime);
+        }
+        this.lastTime = timestamp;
+        const prevX = this.x.lastValue();
+        const dx = (prevX === null) ? 0 : (value - prevX) * this.freq;
+        const edx = this.dx.filter(dx); // derivative
+        const cutoff = this.mincutoff + this.beta * Math.abs(edx);
+        return this.x.filter(value); // signal
+    }
+}
+
+class Vector3Filter {
+    constructor() {
+        const f = CONFIG.INPUT;
+        this.x = new OneEuroFilter(60, f.FILTER_MIN_CUTOFF, f.FILTER_BETA, 1.0);
+        this.y = new OneEuroFilter(60, f.FILTER_MIN_CUTOFF, f.FILTER_BETA, 1.0);
+        this.z = new OneEuroFilter(60, f.FILTER_MIN_CUTOFF, f.FILTER_BETA, 1.0);
+    }
+
+    process(vec3, time) {
+        return new THREE.Vector3(
+            this.x.filter(vec3.x, time),
+            this.y.filter(vec3.y, time),
+            this.z.filter(vec3.z, time)
+        );
+    }
+}
+
+// --- 4. AUDIO ENGINE ---
+/**
+ * Procedural audio generation using WebAudio API.
+ * No external assets required.
+ */
+class AudioEngine {
+    constructor() {
+        this.ctx = null;
+        this.masterGain = null;
         this.enabled = false;
     }
 
-    enable() {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
-        this.enabled = true;
-        document.getElementById('stat-audio').innerText = "ENABLED";
-        document.getElementById('stat-audio').className = "stat-val stat-ok";
-        this.playBootSound();
+    init() {
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioContext();
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.gain.value = 0.4;
+            this.masterGain.connect(this.ctx.destination);
+            this.enabled = true;
+        } catch (e) {
+            console.error("Audio init failed:", e);
+        }
     }
 
-    playTone(freq, type, duration, vol = 1.0) {
+    play(type, freq, duration, vol = 1.0) {
         if (!this.enabled) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-        
-        osc.type = type;
+
+        osc.type = type; // sine, square, sawtooth, triangle
         osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
-        
+
         gain.gain.setValueAtTime(vol, this.ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
-        
+
         osc.connect(gain);
         gain.connect(this.masterGain);
-        
+
         osc.start();
         osc.stop(this.ctx.currentTime + duration);
     }
 
-    // SFX PRESETS
-    playBootSound() {
-        this.playTone(220, 'sine', 0.5);
-        setTimeout(() => this.playTone(440, 'sine', 0.5), 100);
-        setTimeout(() => this.playTone(880, 'sine', 1.0), 300);
+    // Sound Events
+    sfxHover() { this.play('triangle', 600, 0.05, 0.1); }
+    sfxGrab() { this.play('sine', 200, 0.1, 0.3); }
+    sfxSnap() { 
+        this.play('square', 800, 0.1, 0.2); 
+        setTimeout(() => this.play('sine', 100, 0.2, 0.5), 50); // Thud
     }
-
-    playHover() { this.playTone(800, 'triangle', 0.05, 0.05); }
-    playGrab() { this.playTone(150, 'square', 0.1, 0.2); }
-    playSnap() { 
-        this.playTone(1200, 'sine', 0.1, 0.3);
-        this.playTone(50, 'sawtooth', 0.2, 0.5); // Mechanical thud
-    }
-    playError() { this.playTone(150, 'sawtooth', 0.3, 0.3); }
-    playWin() {
-        [440, 554, 659, 880].forEach((f, i) => {
-            setTimeout(() => this.playTone(f, 'square', 0.4, 0.4), i * 150);
+    sfxRotate() { this.play('sawtooth', 100, 0.1, 0.05); }
+    sfxWin() {
+        const scale = [523.25, 659.25, 783.99, 1046.50];
+        scale.forEach((note, i) => {
+            setTimeout(() => this.play('square', note, 0.3, 0.3), i * 150);
         });
     }
 }
+const Audio = new AudioEngine();
 
-// --- 3. MATH & LOGIC UTILITIES ---
-const MathLib = {
-    // 1 Euro Filter Implementation classes
-    LowPassFilter: class {
-        constructor(alpha) { this.setAlpha(alpha); this.y = null; this.s = null; }
-        setAlpha(alpha) { this.alpha = alpha; }
-        filter(value) {
-            if (this.y === null) this.s = value;
-            else this.s = this.alpha * value + (1.0 - this.alpha) * this.s;
-            this.y = this.s; return this.y;
-        }
-    },
+// --- 5. RENDER ENGINE ---
+class RenderEngine {
+    constructor() {
+        this.scene = new THREE.Scene();
+        // Fog for depth perception
+        this.scene.fog = new THREE.FogExp2(0x000000, 0.02);
 
-    OneEuroFilter: class {
-        constructor(freq, mincutoff, beta, dcutoff) {
-            this.freq = freq; this.mincutoff = mincutoff; this.beta = beta; this.dcutoff = dcutoff;
-            this.x = new MathLib.LowPassFilter(this.alpha(mincutoff));
-            this.dx = new MathLib.LowPassFilter(this.alpha(dcutoff));
-            this.lastTime = null;
-        }
-        alpha(cutoff) {
-            const te = 1.0 / this.freq; const tau = 1.0 / (2 * Math.PI * cutoff);
-            return 1.0 / (1.0 + tau / te);
-        }
-        filter(value, timestamp) {
-            if (this.lastTime && timestamp) this.freq = 1.0 / (timestamp - this.lastTime);
-            this.lastTime = timestamp;
-            const prevX = this.x.y === null ? value : this.x.y;
-            const dx = (value - prevX) * this.freq;
-            const edx = this.dx.filter(dx); // derivative
-            const cutoff = this.mincutoff + this.beta * Math.abs(edx);
-            return this.x.filter(value); // signal
-        }
-    },
+        this.camera = new THREE.PerspectiveCamera(
+            CONFIG.RENDER.FOV, 
+            window.innerWidth / window.innerHeight, 
+            CONFIG.RENDER.NEAR, 
+            CONFIG.RENDER.FAR
+        );
+        this.camera.position.z = 5;
 
-    Vector3Filter: class {
-        constructor() {
-            const f = CONFIG.FILTER;
-            this.x = new MathLib.OneEuroFilter(f.FREQ, f.MIN_CUTOFF, f.BETA, f.D_CUTOFF);
-            this.y = new MathLib.OneEuroFilter(f.FREQ, f.MIN_CUTOFF, f.BETA, f.D_CUTOFF);
-            this.z = new MathLib.OneEuroFilter(f.FREQ, f.MIN_CUTOFF, f.BETA, f.D_CUTOFF);
-        }
-        process(v, t) {
-            return new THREE.Vector3(this.x.filter(v.x, t), this.y.filter(v.y, t), this.z.filter(v.z, t));
-        }
-    },
+        this.renderer = new THREE.WebGLRenderer({ 
+            canvas: document.getElementById('canvas-layer'), 
+            alpha: true, 
+            antialias: true 
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Projection & Distance helpers
-    projectLandmark: (lm, cam, zDepth) => {
-        const sens = CONFIG.INPUT.SENSITIVITY;
-        const x = ((1 - lm.x) * 2 - 1) * sens;
-        const y = (-lm.y * 2 + 1) * sens;
-        const vec = new THREE.Vector3(x, y, 0.5);
-        vec.unproject(cam);
-        const dir = vec.sub(cam.position).normalize();
-        const dist = (zDepth - cam.position.z) / dir.z;
-        return cam.position.clone().add(dir.multiplyScalar(dist));
-    },
-
-    dist2D: (p1, p2, aspect) => {
-        const dx = (p1.x - p2.x) * aspect;
-        const dy = p1.y - p2.y;
-        return Math.sqrt(dx*dx + dy*dy);
+        this.initLighting();
+        this.handleResize();
     }
-};
 
-// --- 4. UI & LOGGING SYSTEM ---
-const UI = {
-    logEl: document.getElementById('log-feed'),
-    taskEl: document.getElementById('task-text'),
-    
-    log: (msg, type='info') => {
-        const d = new Date();
-        const time = `${d.getHours()}:${d.getMinutes()}:${d.getSeconds()}`;
-        const row = document.createElement('div');
-        row.className = `log-entry ${type === 'err' ? 'log-err' : 'log-sys'}`;
-        row.innerHTML = `[${time}] ${msg}`;
-        UI.logEl.prepend(row);
-        if (UI.logEl.children.length > 20) UI.logEl.lastChild.remove();
-    },
+    initLighting() {
+        const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambient);
 
-    setTask: (msg) => {
-        UI.taskEl.innerText = msg;
-        UI.taskEl.style.color = '#fff';
-        setTimeout(() => UI.taskEl.style.color = CONFIG.THEME.PRIMARY, 200);
-    },
+        this.dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        this.dirLight.position.set(5, 10, 7);
+        this.dirLight.castShadow = true;
+        this.dirLight.shadow.mapSize.width = 1024;
+        this.dirLight.shadow.mapSize.height = 1024;
+        this.scene.add(this.dirLight);
 
-    updateCounter: (curr, total) => {
-        document.getElementById('stat-parts').innerText = `${curr} / ${total}`;
-    },
-
-    bootSequence: async (callback) => {
-        const log = document.getElementById('boot-log');
-        const lines = [
-            "INITIALIZING TNTU KERNEL v7.0...",
-            "LOADING PHYSICS ENGINE... OK",
-            "LOADING AUDIO SYNTHESIZER... OK",
-            "CHECKING SENSORS... OK",
-            "BUILDING DEPENDENCY GRAPH...",
-            "LOADING 3D ASSETS: [GEARS, CHASSIS, PCB, POWER_CELLS]...",
-            "SYSTEM READY."
-        ];
-
-        for (let line of lines) {
-            log.innerHTML += line + "\n";
-            log.scrollTop = log.scrollHeight;
-            await new Promise(r => setTimeout(r, 300));
-        }
-
-        const btn = document.getElementById('boot-btn');
-        btn.style.display = 'block';
-        btn.onclick = () => {
-            document.getElementById('boot-layer').style.display = 'none';
-            callback();
-        };
+        // Rim light for cool effect
+        const rimLight = new THREE.SpotLight(CONFIG.THEME.PRIMARY, 2);
+        rimLight.position.set(-5, 0, 5);
+        rimLight.lookAt(0,0,0);
+        this.scene.add(rimLight);
     }
-};
 
-// --- 5. 3D COMPONENT LIBRARY ---
-class ComponentFactory {
-    static createPartMesh(type) {
+    handleResize() {
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    render() {
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+// --- 6. PROCEDURAL MODEL FACTORY ---
+/**
+ * Generates detailed 3D meshes procedurally.
+ * This saves bandwidth and allows for infinite variations.
+ */
+class ModelFactory {
+    static getMaterial(type) {
+        switch(type) {
+            case 'metal': return new THREE.MeshStandardMaterial({color: 0xaaaaaa, metalness: 0.8, roughness: 0.2});
+            case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9});
+            case 'pcb': return new THREE.MeshStandardMaterial({color: 0x004400, roughness: 0.4});
+            case 'plastic': return new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.5});
+            case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.6});
+            case 'glass': return new THREE.MeshPhongMaterial({color: 0xaaccff, opacity: 0.3, transparent: true});
+            default: return new THREE.MeshBasicMaterial({color: 0xffffff});
+        }
+    }
+
+    static createPart(type) {
         const group = new THREE.Group();
-        let geo, mat, sub;
-
-        switch (type) {
-            case 'wheel':
-                // Complex Wheel
-                geo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 32);
-                geo.rotateX(Math.PI/2);
-                mat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.8}); // Tire
-                const tire = new THREE.Mesh(geo, mat);
+        
+        switch(type) {
+            case 'gear':
+                // Detailed Gear
+                const gearGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 24);
+                const gearMat = this.getMaterial('plastic');
+                const gearBase = new THREE.Mesh(gearGeo, gearMat);
+                gearBase.rotation.x = Math.PI / 2;
+                group.add(gearBase);
                 
-                const rimGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.26, 12);
-                rimGeo.rotateX(Math.PI/2);
-                const rimMat = new THREE.MeshStandardMaterial({color: 0xdddddd, metalness: 0.8});
-                const rim = new THREE.Mesh(rimGeo, rimMat);
-                
-                // Bolts
-                for(let i=0; i<4; i++) {
-                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6), rimMat);
-                    bolt.rotateX(Math.PI/2);
-                    bolt.position.set(Math.cos(i*1.57)*0.15, Math.sin(i*1.57)*0.15, 0);
-                    group.add(bolt);
+                // Teeth
+                const toothGeo = new THREE.BoxGeometry(0.1, 0.05, 0.1);
+                for(let i=0; i<12; i++) {
+                    const tooth = new THREE.Mesh(toothGeo, gearMat);
+                    const angle = (i / 12) * Math.PI * 2;
+                    tooth.position.set(Math.cos(angle)*0.3, Math.sin(angle)*0.3, 0);
+                    tooth.rotation.z = angle;
+                    group.add(tooth);
                 }
-                group.add(tire, rim);
+                // Hub
+                const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.06, 12), this.getMaterial('metal'));
+                hub.rotation.x = Math.PI/2;
+                group.add(hub);
                 break;
 
-            case 'axle':
-                // Axle rod
-                geo = new THREE.CylinderGeometry(0.08, 0.08, 2.0, 12);
-                geo.rotateZ(Math.PI/2);
-                mat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.5});
-                group.add(new THREE.Mesh(geo, mat));
+            case 'board':
+                // PCB Board
+                const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), this.getMaterial('pcb'));
+                group.add(pcb);
+                // Chips
+                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.2), this.getMaterial('plastic'));
+                chip1.position.set(0.2, 0.04, 0.1);
+                group.add(chip1);
+                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.15), this.getMaterial('plastic'));
+                chip2.position.set(-0.15, 0.04, -0.1);
+                group.add(chip2);
+                // Contacts
+                const pins = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.01, 0.05), this.getMaterial('copper'));
+                pins.position.set(0, 0.03, 0.22);
+                group.add(pins);
                 break;
 
-            case 'motor':
-                // Electric Motor
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.0), new THREE.MeshStandardMaterial({color: 0x333333}));
-                const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.8, 16), new THREE.MeshStandardMaterial({color: 0xb87333})); // Copper
-                coil.rotation.z = Math.PI/2;
-                group.add(body, coil);
+            case 'screen':
+                // LCD Screen
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.4), this.getMaterial('plastic'));
+                group.add(frame);
+                const lcd = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.3), new THREE.MeshBasicMaterial({color: 0x00aaff}));
+                lcd.rotation.x = -Math.PI / 2;
+                lcd.position.y = 0.03;
+                group.add(lcd);
                 break;
 
             case 'battery':
                 // AA Battery
-                geo = new THREE.CylinderGeometry(0.15, 0.15, 0.8, 16);
-                geo.rotateZ(Math.PI/2);
-                mat = new THREE.MeshStandardMaterial({color: 0xddaa00, metalness: 0.4});
-                const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.1, 16), new THREE.MeshStandardMaterial({color: 0xdddddd}));
-                tip.rotation.z = Math.PI/2;
-                tip.position.x = 0.45;
-                group.add(new THREE.Mesh(geo, mat), tip);
+                const batGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 16);
+                const batMat = new THREE.MeshStandardMaterial({color: 0xffaa00}); // Gold/Orange wrapper
+                const bat = new THREE.Mesh(batGeo, batMat);
+                bat.rotation.z = Math.PI / 2;
+                
+                const posTip = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.05, 12), this.getMaterial('metal'));
+                posTip.rotation.z = Math.PI / 2;
+                posTip.position.x = 0.32;
+                
+                const negTip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.02, 12), this.getMaterial('metal'));
+                negTip.rotation.z = Math.PI / 2;
+                negTip.position.x = -0.31;
+
+                group.add(bat, posTip, negTip);
                 break;
 
-            case 'cover':
-                // Battery Cover
-                geo = new THREE.BoxGeometry(1.0, 0.05, 1.2);
-                mat = new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.9});
-                group.add(new THREE.Mesh(geo, mat));
+            case 'cover_batt':
+                const cov1 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.02, 0.5), this.getMaterial('plastic'));
+                group.add(cov1);
                 break;
-                
-            case 'spoiler':
-                // Racing Spoiler
-                const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 0.5), new THREE.MeshStandardMaterial({color: 0xff0000}));
-                const legL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.4, 0.2), new THREE.MeshStandardMaterial({color: 0x222222}));
-                const legR = legL.clone();
-                legL.position.set(-0.8, -0.25, 0);
-                legR.position.set(0.8, -0.25, 0);
-                group.add(wing, legL, legR);
+
+            case 'cover_bottom':
+                const cov2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.02, 2.5), this.getMaterial('plastic'));
+                group.add(cov2);
+                // Vents
+                for(let i=-2; i<=2; i++) {
+                    const vent = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.03, 0.05), this.getMaterial('plastic'));
+                    vent.position.z = i * 0.3;
+                    group.add(vent);
+                }
                 break;
         }
 
-        // Add invisible hit-box for easier grabbing
-        const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({visible: false}));
-        hitbox.scale.set(1.5, 1.5, 1.5);
-        hitbox.userData = { parentGroup: group };
-        group.add(hitbox);
+        // Add standardized interaction volume (Hitbox)
+        // This is invisible but larger than the object for easier grabbing
+        const hitGeo = new THREE.BoxGeometry(1, 1, 1);
+        const hitMat = new THREE.MeshBasicMaterial({visible: false});
+        const hitBox = new THREE.Mesh(hitGeo, hitMat);
+        // Adjust scale based on part type roughly
+        if (type === 'cover_bottom') hitBox.scale.set(1.5, 0.5, 3);
+        else hitBox.scale.set(0.8, 0.8, 0.8);
+        
+        hitBox.userData = { isPart: true, parentGroup: group };
+        group.add(hitBox);
 
         return group;
     }
 }
 
-// --- 6. SCENE MANAGEMENT ---
-class SceneManager {
-    constructor() {
-        this.scene = new THREE.Scene();
+// --- 7. SCENE GRAPH MANAGER ---
+class SceneGraph {
+    constructor(renderEngine) {
+        this.re = renderEngine;
         
-        // Environment
-        this.camera = new THREE.PerspectiveCamera(CONFIG.CORE.FOV, window.innerWidth/window.innerHeight, 0.1, 100);
-        this.camera.position.z = 5;
-        this.renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('ar-layer'), alpha: true, antialias: true });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.shadowMap.enabled = true;
-
-        // Lighting
-        const ambi = new THREE.AmbientLight(0xffffff, 0.4);
-        this.dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        this.dirLight.position.set(5, 10, 5);
-        this.dirLight.castShadow = true;
-        this.scene.add(ambi, this.dirLight);
-
-        // Root Objects
-        this.worldRoot = new THREE.Group(); // Rotating container for the car
+        // 1. World Root (The Object being assembled)
+        this.worldRoot = new THREE.Group();
         this.worldRoot.position.set(0, -1, -6);
-        this.scene.add(this.worldRoot);
+        this.re.scene.add(this.worldRoot);
 
-        this.floatingRoot = new THREE.Group(); // Container for loose parts
+        // 2. Floating Root (Unassembled parts)
+        this.floatingRoot = new THREE.Group();
         this.floatingRoot.position.set(0, 0, -5);
-        this.scene.add(this.floatingRoot);
+        this.re.scene.add(this.floatingRoot);
 
-        // Gizmo
+        // 3. Gizmo (Rotation Control)
         this.gizmo = this.createGizmo();
-        this.scene.add(this.gizmo);
-        
-        // Cursor
+        this.re.scene.add(this.gizmo);
+
+        // 4. Cursor
         this.cursor = this.createCursor();
-        this.scene.add(this.cursor);
+        this.re.scene.add(this.cursor);
+
+        this.initChassis();
     }
 
     createGizmo() {
         const g = new THREE.Group();
-        g.position.set(3.5, -1, -6);
-        
-        const sphere = new THREE.Mesh(
-            new THREE.IcosahedronGeometry(0.7, 1),
-            new THREE.MeshPhongMaterial({color: 0xffaa00, wireframe: true, emissive: 0x331100})
-        );
-        const core = new THREE.Mesh(
-            new THREE.SphereGeometry(0.3),
-            new THREE.MeshBasicMaterial({color: 0xff0000})
-        );
-        const ring = new THREE.Mesh(
-            new THREE.TorusGeometry(1.0, 0.02, 16, 64),
-            new THREE.MeshBasicMaterial({color: 0x555555})
-        );
-        
-        // Hitbox
-        const hit = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({visible:false}));
+        // CENTERED AND LOWER
+        g.position.set(0, -3.5, -6); 
+
+        const geo = new THREE.IcosahedronGeometry(0.8, 1);
+        const mat = new THREE.MeshPhongMaterial({
+            color: CONFIG.COLORS.GIZMO_IDLE,
+            wireframe: true,
+            emissive: 0x331100
+        });
+        const sphere = new THREE.Mesh(geo, mat);
+
+        const ring1 = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.02, 32, 64), new THREE.MeshBasicMaterial({color: 0x666666}));
+        const ring2 = ring1.clone();
+        ring2.rotation.x = Math.PI / 2;
+
+        const hit = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshBasicMaterial({visible: false}));
         hit.userData = { isGizmo: true };
+
+        g.add(sphere, ring1, ring2, hit);
         
-        g.add(sphere, core, ring, hit);
+        // Continuous animation
+        g.userData.animate = () => {
+            sphere.rotation.y += 0.005;
+            sphere.rotation.z += 0.002;
+        };
+
         return g;
     }
 
     createCursor() {
         const g = new THREE.Group();
-        // Red Dot (Bigger)
+        // Center Dot
         const dot = new THREE.Mesh(
-            new THREE.SphereGeometry(0.03, 32, 32),
-            new THREE.MeshBasicMaterial({color: CONFIG.THEME.CURSOR_ACTIVE, depthTest: false})
+            new THREE.SphereGeometry(0.04, 16, 16),
+            new THREE.MeshBasicMaterial({color: CONFIG.COLORS.CURSOR_OPEN, depthTest: false})
         );
-        // Brackets
-        const ringGeo = new THREE.RingGeometry(0.06, 0.07, 32, 1, 0, Math.PI);
-        const mat = new THREE.MeshBasicMaterial({color: CONFIG.THEME.CURSOR_ACTIVE, side: THREE.DoubleSide, depthTest: false, opacity: 0.8, transparent: true});
-        const l = new THREE.Mesh(ringGeo, mat); l.rotation.z = Math.PI/2;
-        const r = new THREE.Mesh(ringGeo, mat); r.rotation.z = -Math.PI/2;
         
-        g.add(dot, l, r);
-        g.userData = { l, r, dot, mat };
+        // Brackets ( )
+        const ringGeo = new THREE.RingGeometry(0.08, 0.09, 32, 1, 0, Math.PI);
+        const mat = new THREE.MeshBasicMaterial({
+            color: CONFIG.COLORS.CURSOR_OPEN, 
+            side: THREE.DoubleSide, 
+            transparent: true, 
+            opacity: 0.8,
+            depthTest: false
+        });
+        
+        const left = new THREE.Mesh(ringGeo, mat);
+        left.rotation.z = Math.PI / 2;
+        
+        const right = new THREE.Mesh(ringGeo, mat);
+        right.rotation.z = -Math.PI / 2;
+
+        g.add(dot, left, right);
+        g.userData = { dot, left, right, mat };
         g.visible = false;
         return g;
     }
 
-    updateCursor(pos, pinchState) {
+    initChassis() {
+        // Main Green Body
+        const geo = new THREE.BoxGeometry(1.6, 0.1, 4.0);
+        const mat = new THREE.MeshPhongMaterial({color: CONFIG.COLORS.CHASSIS, shininess: 80});
+        const chassis = new THREE.Mesh(geo, mat);
+        this.worldRoot.add(chassis);
+        
+        // Decoration (Stripes)
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.11, 4.0), new THREE.MeshBasicMaterial({color: 0x111111}));
+        this.worldRoot.add(stripe);
+    }
+
+    updateGizmoState(active) {
+        const color = active ? CONFIG.COLORS.GIZMO_ACTIVE : CONFIG.COLORS.GIZMO_IDLE;
+        this.gizmo.children[0].material.color.setHex(color);
+        if (active) this.gizmo.scale.setScalar(1.1);
+        else this.gizmo.scale.setScalar(1.0);
+    }
+
+    updateCursorState(pos, pinched) {
         this.cursor.visible = true;
         this.cursor.position.copy(pos);
         
-        // Light follows cursor
-        this.dirLight.position.x = pos.x + 2;
-        this.dirLight.position.y = pos.y + 5;
+        // Animation
+        const offset = pinched ? 0 : 0.1;
+        this.cursor.userData.left.position.x = -offset;
+        this.cursor.userData.right.position.x = offset;
 
-        // Visuals
-        const offset = pinchState ? 0 : 0.08;
-        this.cursor.userData.l.position.x = -offset;
-        this.cursor.userData.r.position.x = offset;
-        
-        const col = pinchState ? CONFIG.THEME.CURSOR_LOCK : CONFIG.THEME.CURSOR_ACTIVE;
+        // Color
+        const col = pinched ? CONFIG.COLORS.CURSOR_CLOSED : CONFIG.COLORS.CURSOR_OPEN;
         this.cursor.userData.dot.material.color.setHex(col);
         this.cursor.userData.mat.color.setHex(col);
     }
 }
 
-// --- 7. ASSEMBLY LOGIC ENGINE ---
-class AssemblyEngine {
-    constructor(sceneManager, audio) {
-        this.sm = sceneManager;
-        this.audio = audio;
-        
+// --- 8. GAME LOGIC (ASSEMBLY) ---
+class GameLogic {
+    constructor(sceneGraph) {
+        this.sg = sceneGraph;
         this.parts = [];
         this.snaps = [];
-        this.dependencyGraph = {}; // "part_id" -> "required_part_id"
-        
-        this.buildCarChassis();
-        this.scatterParts();
+        this.installedCount = 0;
+        this.totalParts = 0;
+
+        this.initLevel();
     }
 
-    buildCarChassis() {
-        // Main Frame
-        const chassis = new THREE.Mesh(
-            new THREE.BoxGeometry(1.6, 0.2, 4.0),
-            new THREE.MeshStandardMaterial({color: 0x006622, roughness: 0.5, metalness: 0.3})
-        );
-        this.sm.worldRoot.add(chassis);
+    initLevel() {
+        // Define all parts and their target locations
+        // 7 Gears
+        this.addGearSet(-0.85, 0); // Left side
+        this.addGearSet(0.85, 0);  // Right side (one extra)
+        this.createPart('gear', new THREE.Vector3(0.85, 0, 1.2), 'gear_R4', null); // 4th right gear
 
-        // Define Snap Zones (Ghosts) & Dependencies
-        
-        // 1. Rear Axle
-        this.addSnap('axle', new THREE.Vector3(0, -0.2, 1.2), 'BOT', null, 'axle_rear');
-        // 2. Front Axle
-        this.addSnap('axle', new THREE.Vector3(0, -0.2, -1.2), 'BOT', null, 'axle_front');
-        
-        // 3. Wheels (Depend on Axles)
-        this.addSnap('wheel', new THREE.Vector3(-1.0, -0.2, 1.2), 'BOT', 'axle_rear');
-        this.addSnap('wheel', new THREE.Vector3( 1.0, -0.2, 1.2), 'BOT', 'axle_rear');
-        this.addSnap('wheel', new THREE.Vector3(-1.0, -0.2, -1.2), 'BOT', 'axle_front');
-        this.addSnap('wheel', new THREE.Vector3( 1.0, -0.2, -1.2), 'BOT', 'axle_front');
+        // Electronics
+        this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0), 'TOP');
+        this.createSnap('screen', new THREE.Vector3(0, 0.08, 0.5), 'TOP');
 
-        // 4. Motor (Top)
-        this.addSnap('motor', new THREE.Vector3(0, 0.4, 1.0), 'TOP', null, 'motor');
-        
-        // 5. Battery (Bottom)
-        this.addSnap('battery', new THREE.Vector3(0.2, -0.15, 0), 'BOT', null, 'bat1');
-        this.addSnap('battery', new THREE.Vector3(-0.2, -0.15, 0), 'BOT', null, 'bat2');
-        
-        // 6. Cover (Depends on Batteries)
-        this.addSnap('cover', new THREE.Vector3(0, -0.25, 0), 'BOT', ['bat1', 'bat2']);
+        // Bottom parts (Batteries & Covers)
+        this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
+        this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
+        this.createSnap('cover_batt', new THREE.Vector3(0, -0.15, 0.8), 'BOT');
+        this.createSnap('cover_bottom', new THREE.Vector3(0, -0.12, -0.5), 'BOT');
 
-        // 7. Spoiler
-        this.addSnap('spoiler', new THREE.Vector3(0, 0.5, 1.8), 'TOP');
+        this.spawnLooseParts();
     }
 
-    addSnap(type, pos, face, depId=null, selfId=null) {
-        const snapGroup = new THREE.Group();
-        snapGroup.position.copy(pos);
-        
-        // Ghost geometry
-        let geo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-        if(type==='axle') geo = new THREE.CylinderGeometry(0.1, 0.1, 2.0, 8);
-        if(type==='axle') snapGroup.rotation.z = Math.PI/2;
-        if(type==='wheel') { geo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16); snapGroup.rotation.z = Math.PI/2; }
-        
-        const mat = new THREE.MeshBasicMaterial({color: CONFIG.THEME.GHOST_VALID, wireframe: true, transparent:true, opacity:0.3});
-        const mesh = new THREE.Mesh(geo, mat);
-        snapGroup.add(mesh);
-        
-        // Info text
-        const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=64;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle='#0f0'; ctx.font='40px Arial'; ctx.fillText(type.toUpperCase(), 10, 50);
-        const label = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.25), new THREE.MeshBasicMaterial({map: new THREE.CanvasTexture(canvas), transparent:true, side:2}));
-        label.position.y = 0.5;
-        snapGroup.add(label);
+    addGearSet(x, y) {
+        const zPositions = [-1.0, 0.0, 1.0];
+        zPositions.forEach((z, i) => {
+            this.createSnap('gear', new THREE.Vector3(x, y, z), 'SIDE');
+        });
+    }
 
-        snapGroup.userData = { 
+    createSnap(type, pos, face) {
+        const snap = new THREE.Group();
+        snap.position.copy(pos);
+        
+        // Ghost visualization
+        let ghostGeo;
+        if(type === 'gear') { ghostGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16); snap.rotation.x = Math.PI/2; }
+        else if(type === 'battery') { ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12); snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2; }
+        else ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
+
+        const ghostMat = new THREE.MeshBasicMaterial({
+            color: CONFIG.COLORS.GHOST_VALID, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.3
+        });
+        const ghost = new THREE.Mesh(ghostGeo, ghostMat);
+        snap.add(ghost);
+
+        snap.userData = { 
+            isSnap: true, 
             type: type, 
-            occupied: false, 
-            face: face, 
-            dep: depId, // ID of dependency
-            id: selfId, // Own ID
-            mesh: mesh
+            occupied: false,
+            mesh: ghost
         };
 
-        this.sm.worldRoot.add(snapGroup);
-        this.snaps.push(snapGroup);
-        
-        // Register dependency state
-        if (selfId) this.dependencyGraph[selfId] = false;
+        this.sg.worldRoot.add(snap);
+        this.snaps.push(snap);
+        this.totalParts++;
     }
 
-    scatterParts() {
-        const list = ['axle','axle', 'wheel','wheel','wheel','wheel', 'motor', 'battery','battery', 'cover', 'spoiler'];
-        list.forEach((type, i) => {
-            const x = (Math.random()-0.5) * 5;
-            const y = (Math.random()-0.5) * 3;
-            const part = new Part(type, i);
-            part.mesh = ComponentFactory.createPartMesh(type);
-            part.mesh.position.set(x, y, 0); // Local to floatingRoot
+    spawnLooseParts() {
+        // Create matching parts for all snaps
+        this.snaps.forEach(snap => {
+            const type = snap.userData.type;
+            const part = new ModelFactory.createPart(type);
             
-            // Add physics data
-            part.mesh.userData.part = part;
-            part.mesh.userData.velocity = new THREE.Vector3((Math.random()-0.5)*0.01, (Math.random()-0.5)*0.01, 0);
+            // Random scatter position
+            const rx = (Math.random() - 0.5) * 6;
+            const ry = (Math.random() - 0.5) * 4;
+            part.position.set(rx, ry, 0);
             
-            this.sm.floatingRoot.add(part.mesh);
+            part.userData.type = type;
+            part.userData.isInstalled = false;
+            
+            this.sg.floatingRoot.add(part);
             this.parts.push(part);
         });
-        UI.updateCounter(0, list.length);
+        
+        this.updateCounter();
     }
 
-    // Checking if snap is valid based on dependencies
-    isSnapAvailable(snap) {
-        if (snap.userData.occupied) return false;
+    updateCounter() {
+        const el = document.getElementById('ui-counter');
+        el.innerText = `${this.installedCount} / ${this.totalParts}`;
         
-        const dep = snap.userData.dep;
-        if (!dep) return true; // No dependencies
-        
-        if (Array.isArray(dep)) {
-            // Check all
-            return dep.every(id => this.dependencyGraph[id] === true);
-        } else {
-            // Check single
-            return this.dependencyGraph[dep] === true;
+        if(this.installedCount === this.totalParts) {
+            this.triggerWin();
         }
     }
 
-    findSnap(pos, type) {
-        let best = null;
-        let minD = CONFIG.PHYSICS.SNAP_DISTANCE;
+    checkSnap(part, partPos) {
+        let bestSnap = null;
+        let minDist = CONFIG.PHYSICS.SNAP_DISTANCE;
 
-        this.snaps.forEach(snap => {
-            // Reset visuals
-            snap.userData.mesh.material.color.setHex(0x00ff00);
-            snap.visible = true;
+        for (const snap of this.snaps) {
+            if (snap.userData.occupied) continue;
+            if (snap.userData.type !== part.userData.type) continue;
 
-            // Basic checks
-            if (snap.userData.occupied) { snap.visible = false; return; }
-            if (snap.userData.type !== type) { snap.visible = false; return; }
+            // Get world position of snap (since it rotates with car)
+            const snapWorldPos = new THREE.Vector3();
+            snap.getWorldPosition(snapWorldPos);
+
+            const dist = partPos.distanceTo(snapWorldPos);
             
-            // Check dependency
-            if (!this.isSnapAvailable(snap)) {
-                snap.userData.mesh.material.color.setHex(0xff0000); // Red ghost if dependencies not met
-                return; // Can't snap here yet
-            }
-
-            // Distance check (World Space)
-            const wPos = new THREE.Vector3();
-            snap.getWorldPosition(wPos);
-            const d = pos.distanceTo(wPos);
+            // Visual Feedback
+            snap.userData.mesh.material.opacity = 0.3;
             
-            if (d < minD) {
-                minD = d;
-                best = snap;
+            if (dist < minDist) {
+                minDist = dist;
+                bestSnap = snap;
             }
-        });
+        }
 
-        if (best) best.userData.mesh.material.color.setHex(0xffff00); // Highlight
-        return best;
+        if (bestSnap) {
+            bestSnap.userData.mesh.material.opacity = 0.8; // Highlight
+        }
+        return bestSnap;
     }
 
     installPart(part, snap) {
-        this.sm.floatingRoot.remove(part.mesh);
-        this.sm.worldRoot.add(part.mesh);
+        // Move from floating to world root
+        this.sg.floatingRoot.remove(part);
+        this.sg.worldRoot.add(part);
         
-        part.mesh.position.copy(snap.position);
-        part.mesh.rotation.copy(snap.rotation);
+        // Snap transform
+        part.position.copy(snap.position);
+        part.rotation.copy(snap.rotation);
         
-        part.isInstalled = true;
+        // Correct specific rotations
+        if(part.userData.type === 'gear') part.rotation.x = Math.PI/2;
+        if(part.userData.type === 'battery') { part.rotation.x = 0; part.rotation.z = Math.PI/2; }
+
+        part.userData.isInstalled = true;
         snap.userData.occupied = true;
-        snap.visible = false;
-        
-        // Update dependency graph
-        if (snap.userData.id) this.dependencyGraph[snap.userData.id] = true;
+        snap.visible = false; // Hide ghost
 
-        this.audio.playSnap();
+        this.installedCount++;
+        this.updateCounter();
+        Audio.sfxSnap();
         
-        // Update Counter
-        const installed = this.parts.filter(p => p.isInstalled).length;
-        UI.updateCounter(installed, this.parts.length);
-        
-        if (installed === this.parts.length) {
-            this.audio.playWin();
-            document.getElementById('win-screen').style.display = 'block';
-        }
+        // Sparkle effect could go here
+    }
+
+    triggerWin() {
+        Audio.sfxWin();
+        document.getElementById('victory-modal').classList.add('active');
+        // Confetti logic simulation
+        let i = 0;
+        const interval = setInterval(() => {
+            const colors = ['#f00', '#0f0', '#00f', '#ff0'];
+            document.body.style.backgroundColor = colors[i % 4];
+            i++;
+            if(i>5) {
+                clearInterval(interval);
+                document.body.style.backgroundColor = '#020202';
+            }
+        }, 200);
     }
 }
 
-class Part {
-    constructor(type, id) {
-        this.type = type;
-        this.id = id;
-        this.isInstalled = false;
-        this.mesh = null;
-    }
-}
-
-// --- 8. MAIN LOOP & INPUT ---
-class App {
-    constructor() {
-        this.sm = new SceneManager();
-        this.audio = new AudioSynthesizer();
-        this.ae = new AssemblyEngine(this.sm, this.audio);
+// --- 9. INPUT CONTROLLER ---
+class InputSystem {
+    constructor(game, sceneGraph) {
+        this.game = game;
+        this.sg = sceneGraph;
         this.raycaster = new THREE.Raycaster();
-        this.filter = new MathLib.Vector3Filter();
+        this.filter = new Vector3Filter();
         
         this.state = {
             handPos: new THREE.Vector3(),
             isPinching: false,
-            grabbedPart: null,
+            grabbedObject: null,
+            potentialSnap: null,
             isRotating: false,
             lastRotPos: new THREE.Vector3()
         };
     }
 
-    start() {
-        const hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
-        hands.setOptions({maxNumHands: 1, minDetectionConfidence: 0.7});
-        hands.onResults(this.onHand.bind(this));
+    update(landmarks, camera) {
+        const now = performance.now() / 1000;
         
-        const vid = document.getElementById('camera-layer');
-        new Camera(vid, {onFrame: async()=>{await hands.send({image:vid})}, width:1280, height:720}).start();
+        // 1. Filtered Position
+        const rawPos = MathLib.project(landmarks[8], camera, -5);
+        const pos = this.filter.process(rawPos, now);
         
-        this.loop();
+        // 2. Pinch Detection
+        const asp = window.innerWidth / window.innerHeight;
+        const dist = MathLib.dist2D(landmarks[8], landmarks[4], asp);
+        const pinched = dist < CONFIG.INPUT.PINCH_THRESHOLD_START;
+        
+        // Update Cursor
+        this.sg.updateCursor(pos, pinched);
+
+        // State Machine
+        if (pinched && !this.state.isPinching) {
+            this.onGrabStart(pos, camera);
+        } else if (!pinched && this.state.isPinching) {
+            this.onGrabEnd();
+        }
+
+        // Processing
+        if (this.state.isRotating) {
+            this.handleRotation(pos);
+        } else if (this.state.grabbedObject) {
+            this.handleDrag(pos);
+        }
+
+        this.state.isPinching = pinched;
+        this.state.handPos.copy(pos);
     }
 
-    onHand(res) {
-        if (!res.multiHandLandmarks[0]) {
-            this.sm.cursor.visible = false;
-            document.getElementById('stat-hand').innerText = "LOST";
-            document.getElementById('stat-hand').className = "stat-val stat-warn";
+    onGrabStart(pos, camera) {
+        // Raycast
+        const screen = pos.clone().project(camera);
+        this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
+        
+        // Check Gizmo
+        const gizmoHits = this.raycaster.intersectObjects(this.sg.gizmo.children);
+        if (gizmoHits.length > 0) {
+            this.state.isRotating = true;
+            this.state.lastRotPos.copy(pos);
+            this.sg.updateGizmoState(true);
+            Audio.sfxHover();
             return;
         }
+
+        // Check Parts
+        // Only interact with floating parts
+        const partHits = this.raycaster.intersectObjects(this.sg.floatingRoot.children, true);
         
-        document.getElementById('stat-hand').innerText = "TRACKING";
-        document.getElementById('stat-hand').className = "stat-val stat-ok";
-
-        const lm = res.multiHandLandmarks[0];
-        const now = performance.now()/1000;
-        
-        // 1. Position Smoothing
-        const rawPos = MathLib.projectLandmark(lm[8], this.sm.camera, -5);
-        const pos = this.filter.process(rawPos, now);
-        this.state.handPos.copy(pos);
-
-        // 2. Pinch Detect
-        const asp = window.innerWidth/window.innerHeight;
-        const pinchDist = MathLib.dist2D(lm[8], lm[4], asp);
-        const isPinched = pinchDist < CONFIG.INPUT.PINCH_START;
-        
-        // Visual Update
-        this.sm.updateCursor(pos, isPinched);
-
-        // 3. Logic
-        if (isPinched && !this.state.isPinching) {
-            // PRESS START
-            this.handleGrab(pos);
-        } else if (!isPinched && this.state.isPinching) {
-            // RELEASE
-            this.handleRelease();
-        }
-
-        // 4. Manipulation
-        if (this.state.isRotating) {
-            const deltaX = (pos.x - this.state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
-            const deltaY = (pos.y - this.state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
-            
-            this.sm.worldRoot.rotation.y += deltaX;
-            this.sm.worldRoot.rotation.x += deltaY;
-            this.sm.gizmo.rotation.copy(this.sm.worldRoot.rotation); // Sync gizmo visuals
-            
-            this.state.lastRotPos.copy(pos);
-        }
-
-        if (this.state.grabbedPart) {
-            // Move part with physics lag
-            this.state.grabbedPart.mesh.position.lerp(pos, CONFIG.PHYSICS.LERP_SPEED);
-            
-            // Highlight snap
-            this.state.potentialSnap = this.ae.findSnap(pos, this.state.grabbedPart.type);
-        }
-
-        this.state.isPinching = isPinched;
-    }
-
-    handleGrab(pos) {
-        // Raycast
-        const screen = pos.clone().project(this.sm.camera);
-        this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), this.sm.camera);
-        
-        const hits = this.raycaster.intersectObjects(this.sm.scene.children, true);
-        
-        for(let hit of hits) {
-            // Gizmo
-            if (hit.object.userData.isGizmo) {
-                this.state.isRotating = true;
-                this.state.lastRotPos.copy(pos);
-                this.audio.playHover();
-                return;
-            }
-            
-            // Part
-            // Traverse up to find user data
+        for (let hit of partHits) {
+            // Find root group of part
             let obj = hit.object;
-            while(obj.parent && !obj.userData.part) obj = obj.parent;
+            while(obj.parent && obj.parent !== this.sg.floatingRoot) {
+                obj = obj.parent;
+            }
             
-            if (obj.userData.part && !obj.userData.part.isInstalled) {
-                this.state.grabbedPart = obj.userData.part;
-                this.audio.playGrab();
-                UI.setTask(`Перетягую: ${this.state.grabbedPart.type.toUpperCase()}`);
+            if (obj.userData.type && !obj.userData.isInstalled) {
+                this.state.grabbedObject = obj;
+                Audio.sfxGrab();
                 return;
             }
         }
-        this.audio.playError(); // Missed
     }
 
-    handleRelease() {
+    onGrabEnd() {
         if (this.state.isRotating) {
             this.state.isRotating = false;
+            this.sg.updateGizmoState(false);
         }
-        
-        if (this.state.grabbedPart) {
+
+        if (this.state.grabbedObject) {
             if (this.state.potentialSnap) {
-                this.ae.installPart(this.state.grabbedPart, this.state.potentialSnap);
-                UI.setTask("Деталь встановлено");
-            } else {
-                UI.setTask("Скидання деталі...");
-                this.audio.playError();
+                this.game.installPart(this.state.grabbedObject, this.state.potentialSnap);
             }
-            this.state.grabbedPart = null;
+            this.state.grabbedObject = null;
+            this.state.potentialSnap = null;
         }
+    }
+
+    handleRotation(pos) {
+        const dx = (pos.x - this.state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
+        const dy = (pos.y - this.state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
+        
+        this.sg.worldRoot.rotation.y += dx;
+        this.sg.worldRoot.rotation.x += dy;
+        
+        // Sync gizmo visuals
+        this.sg.gizmo.children[0].rotation.y += dx;
+        this.sg.gizmo.children[0].rotation.x += dy;
+        
+        this.state.lastRotPos.copy(pos);
+        
+        if(Math.abs(dx) > 0.05) Audio.sfxRotate();
+    }
+
+    handleDrag(pos) {
+        // Smooth lerp
+        this.state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
+        
+        // Check snaps
+        this.state.potentialSnap = this.game.checkSnap(this.state.grabbedObject, pos);
+    }
+}
+
+// --- 10. MAIN APP KERNEL ---
+class App {
+    constructor() {
+        this.render = new RenderEngine();
+        this.sg = new SceneGraph(this.render);
+        this.game = new GameLogic(this.sg);
+        this.input = new InputSystem(this.game, this.sg);
+    }
+
+    start() {
+        const hands = new Hands({locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+        
+        hands.onResults(res => {
+            if (res.multiHandLandmarks[0]) {
+                this.input.update(res.multiHandLandmarks[0], this.render.camera);
+            } else {
+                this.sg.cursor.visible = false;
+            }
+        });
+
+        const videoEl = document.getElementById('video-layer');
+        const camera = new Camera(videoEl, {
+            onFrame: async () => await hands.send({image: videoEl}),
+            width: CONFIG.CORE.WIDTH,
+            height: CONFIG.CORE.HEIGHT
+        });
+        camera.start();
+
+        this.loop();
     }
 
     loop() {
         requestAnimationFrame(() => this.loop());
         
-        // Idle animation for floating parts
-        if (!this.state.grabbedPart) {
-            const t = Date.now() * 0.001;
-            this.ae.parts.forEach((p, i) => {
-                if (!p.isInstalled) {
-                    p.mesh.position.y += Math.sin(t + i)*0.002;
-                    p.mesh.rotation.z += 0.005;
-                }
-            });
-        }
+        // Idle Animations
+        if (this.sg.gizmo.userData.animate) this.sg.gizmo.userData.animate();
         
-        // Gizmo anim
-        this.sm.gizmo.children[0].rotation.y += 0.01;
+        // Floating parts bobbing
+        const t = Date.now() * 0.001;
+        this.sg.floatingRoot.children.forEach((child, i) => {
+            if(child !== this.input.state.grabbedObject) {
+                child.position.y += Math.sin(t + i) * 0.001;
+                child.rotation.z += 0.005;
+            }
+        });
 
-        this.sm.renderer.render(this.sm.scene, this.sm.camera);
+        this.render.render();
     }
 }
 
-// --- BOOT ---
-UI.bootSequence(() => {
-    const app = new App();
-    app.audio.enable();
-    app.start();
-});
+// --- ENTRY POINT ---
+window.onload = () => {
+    const log = document.getElementById('sys-log');
+    const updateLog = (msg) => log.innerText = msg;
+
+    updateLog("ЗАВАНТАЖЕННЯ ЯДРА...");
+    
+    setTimeout(() => {
+        updateLog("ІНІЦІАЛІЗАЦІЯ ФІЗИКИ...");
+        setTimeout(() => {
+            updateLog("ПІДГОТОВКА ГРАФІКИ...");
+            UI.bootSequence(() => {
+                Audio.init();
+                const app = new App();
+                app.start();
+            });
+        }, 1000);
+    }, 1000);
+};
 
 </script>
 </body>
