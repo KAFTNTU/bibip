@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [DEPENDENCIES]</title>
+    <title>TNTU ENGINEERING SUITE v9.9 [TRIANGLE GESTURE]</title>
     
     <style>
         :root {
@@ -29,6 +29,7 @@
             color: var(--primary-color);
         }
 
+        /* --- ЕКРАН ЗАВАНТАЖЕННЯ --- */
         #boot-layer {
             position: absolute;
             top: 0; left: 0;
@@ -90,6 +91,7 @@
             box-shadow: 0 0 40px var(--primary-color);
         }
 
+        /* --- ОСНОВНИЙ ЕКРАН --- */
         #viewport {
             position: relative;
             width: 100vw;
@@ -113,6 +115,7 @@
             z-index: 10;
         }
 
+        /* --- HUD --- */
         #hud-layer {
             position: absolute;
             top: 0; left: 0;
@@ -121,29 +124,30 @@
             pointer-events: none;
         }
 
-        .hud-widget {
+        .counter-container {
             position: absolute;
-            top: 30px; right: 30px;
-            background: rgba(0, 5, 10, 0.85);
+            bottom: 40px; 
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 5, 10, 0.6);
             border: 1px solid var(--primary-color);
-            border-radius: 4px;
-            padding: 10px 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 20px;
+            padding: 10px 40px;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+            text-align: center;
         }
 
-        .widget-value {
+        #part-counter {
             font-family: var(--mono-font);
-            font-size: 32px;
+            font-size: 36px;
             font-weight: 700;
             color: #fff;
-            line-height: 1;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px var(--primary-color);
         }
 
-        .highlight {
-            color: var(--primary-color);
-        }
-
+        /* --- ЕКРАН ПЕРЕМОГИ --- */
         #victory-screen {
             position: absolute;
             top: 50%; left: 50%;
@@ -200,10 +204,8 @@
         <canvas id="webgl-canvas"></canvas>
 
         <div id="hud-layer">
-            <div class="hud-widget">
-                <div class="widget-value">
-                    <span id="part-counter" class="highlight">0 / 22</span>
-                </div>
+            <div class="counter-container">
+                <span id="part-counter">0 / 23</span>
             </div>
         </div>
 
@@ -216,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.9 "DEPENDENCIES"
+ * TNTU ENGINEERING SUITE v9.9 "TRIANGLE GESTURE"
  * ============================================================================
  */
 
@@ -228,7 +230,7 @@ const CONFIG = {
         SHADOW_MAP_SIZE: 2048
     },
     PHYSICS: {
-        ROTATION_SPEED: 1.0, 
+        ROTATION_SPEED: 0.6, // Зменшено на 60% (було 1.5)
         LERP_FACTOR: 0.2, 
         SNAP_DISTANCE: 0.8,
         GRAB_RADIUS: 1.5,
@@ -252,10 +254,9 @@ const CONFIG = {
         GHOST_VALID: 0x00ff00, 
         GHOST_HIGHLIGHT: 0xff0000, 
         GHOST_INVALID: 0xff0000,
-        GIZMO_IDLE: 0xffaa00,
-        GIZMO_ACTIVE: 0xff3300,
         CURSOR_OPEN: 0xff0000, 
-        CURSOR_CLOSED: 0x00aaff 
+        CURSOR_CLOSED: 0x00aaff,
+        CURSOR_ROTATE: 0xffff00 // Yellow for rotate mode
     }
 };
 
@@ -440,21 +441,14 @@ class ModelFactory {
                 break;
 
             case 'cover_green':
-                // Height = 2.5 * wheel height (0.25) = 0.625
                 const h = 0.625;
                 const halfH = h / 2;
-                
                 const cov = new THREE.Mesh(new THREE.BoxGeometry(1.6, h, 4.0), this.getMaterial('green_cover'));
                 group.add(cov);
-
                 const yTop = halfH + 0.01;
-
-                // Screen
                 const screen = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 1.0), this.getMaterial('screen'));
                 screen.position.set(0, yTop, -0.5); 
                 group.add(screen);
-
-                // Buttons
                 const bC = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
                 bC.position.set(0, yTop, 0.6);
                 const bT = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
@@ -464,13 +458,10 @@ class ModelFactory {
                 const bR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
                 bR.position.set(0.2, yTop, 0.6);
                 group.add(bC, bT, bL, bR);
-
-                // Labels
                 const lbl1 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({map: this.createTextTexture("1 2 3 4"), transparent:true}));
                 lbl1.rotation.x = -Math.PI / 2;
                 lbl1.position.set(0, yTop-0.001, -1.8);
                 group.add(lbl1);
-
                 const lbl2 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({map: this.createTextTexture("A B C D"), transparent:true}));
                 lbl2.rotation.x = -Math.PI / 2;
                 lbl2.position.set(0, yTop-0.001, 1.8); 
@@ -529,25 +520,12 @@ class SceneGraph {
         this.floatingRoot.position.set(0, 0, -5);
         this.re.scene.add(this.floatingRoot);
 
-        this.gizmo = this.createGizmo();
-        this.re.scene.add(this.gizmo);
+        // GIZMO REMOVED - using gesture instead
 
         this.cursor = this.createCursor();
         this.re.scene.add(this.cursor);
 
         this.initChassis();
-    }
-
-    createGizmo() {
-        const g = new THREE.Group();
-        g.position.set(0, -5.0, -6); 
-        const geo = new THREE.IcosahedronGeometry(0.8, 1);
-        const mat = new THREE.MeshPhongMaterial({color: CONFIG.THEME.GIZMO_IDLE, wireframe: true, emissive: 0x331100});
-        const sphere = new THREE.Mesh(geo, mat);
-        const hit = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshBasicMaterial({visible: false}));
-        hit.userData = { isGizmo: true };
-        g.add(sphere, hit);
-        return g;
     }
 
     createCursor() {
@@ -594,18 +572,27 @@ class SceneGraph {
         });
     }
 
-    updateGizmoState(active) {
-        const color = active ? CONFIG.THEME.GIZMO_ACTIVE : CONFIG.THEME.GIZMO_IDLE;
-        this.gizmo.children[0].material.color.setHex(color);
-    }
+    // No gizmo state anymore
 
-    updateCursorState(pos, pinched) {
+    updateCursorState(pos, mode) {
+        // mode: 0=Open, 1=Closed (Grab), 2=Rotate
         this.cursor.visible = true;
         this.cursor.position.copy(pos);
-        const col = pinched ? CONFIG.THEME.CURSOR_CLOSED : CONFIG.THEME.CURSOR_OPEN;
+        
+        let col = CONFIG.THEME.CURSOR_OPEN;
+        let scale = 1.2;
+
+        if (mode === 1) { // Pinch/Grab
+            col = CONFIG.THEME.CURSOR_CLOSED;
+            scale = 0.8;
+        } else if (mode === 2) { // Rotate
+            col = CONFIG.THEME.CURSOR_ROTATE;
+            scale = 1.5;
+        }
+
         this.cursor.userData.dot.material.color.setHex(col);
         this.cursor.userData.ring.material.color.setHex(col);
-        this.cursor.userData.ring.scale.setScalar(pinched ? 0.8 : 1.2);
+        this.cursor.userData.ring.scale.setScalar(scale);
     }
 }
 
@@ -637,8 +624,6 @@ class GameLogic {
         this.createSnap('motor', new THREE.Vector3(0, 0.35, 1.2), 'TOP');
         this.createSnap('motor', new THREE.Vector3(0, 0.35, -0.5), 'TOP');
 
-        // SENSOR position (on top of new tall cover)
-        // Cover H=0.625, Base Y=0.20. Top Y ~0.51.
         this.createSnap('sensor', new THREE.Vector3(0, 0.52, 1.8), 'TOP');
 
         this.spawnLooseParts();
@@ -687,9 +672,8 @@ class GameLogic {
             part.position.set(0, 5, 0);
             part.lookAt(0, 0, 10);
             
-            // COVER TRANSFORM LOGIC
             if (type === 'cover_green') {
-                part.scale.y = 0.2; // Flatten in inventory
+                part.scale.y = 0.2; 
             }
 
             part.userData.type = type;
@@ -714,10 +698,9 @@ class GameLogic {
         let bestSnap = null;
         let limit = 1.5; 
 
-        // DEPENDENCY CHECK
         if (part.userData.type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
-            if (!isCoverInstalled) return null; // Block sensor snap if no cover
+            if (!isCoverInstalled) return null; 
         }
 
         for (const snap of this.snaps) {
@@ -737,7 +720,6 @@ class GameLogic {
     }
 
     setHighlight(type, isActive) {
-        // Prevent highlighting sensor slot if cover is missing
         if (type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return;
@@ -790,9 +772,7 @@ class GameLogic {
             part.rotation.copy(snap.rotation);
         }
 
-        // EXPAND COVER ON INSTALL
         if (part.userData.type === 'cover_green') {
-            // Animate scale to 1 (simple assignment for now)
             part.scale.y = 1.0;
         }
         
@@ -820,12 +800,19 @@ class InputSystem {
         
         this.state = {
             handPos: new THREE.Vector3(),
-            isPinching: false,
+            mode: 0, // 0=None, 1=Grab, 2=Rotate
             grabbedObject: null,
             potentialSnap: null,
-            isRotating: false,
             lastRotPos: new THREE.Vector3()
         };
+    }
+
+    // Helper: Check if finger is straight (extended)
+    // Heuristic: Distance from Wrist (0) to Tip (4/8/12) > Distance from Wrist to lower joint (3/5/9) * 1.2
+    isStraight(wrist, tip, lowerJoint) {
+        const dTip = Math.sqrt(Math.pow(wrist.x - tip.x, 2) + Math.pow(wrist.y - tip.y, 2));
+        const dLower = Math.sqrt(Math.pow(wrist.x - lowerJoint.x, 2) + Math.pow(wrist.y - lowerJoint.y, 2));
+        return dTip > dLower * 1.2;
     }
 
     update(landmarks, camera) {
@@ -844,42 +831,64 @@ class InputSystem {
         const pos = this.filter.process(rawPos, now);
         
         const asp = window.innerWidth / window.innerHeight;
-        const pinchDist = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
-        const isPinched = pinchDist < CONFIG.INPUT.PINCH_THRESHOLD_START;
         
-        this.sg.updateCursorState(pos, isPinched);
+        // Landmarks: 0=Wrist, 4=ThumbTip, 8=IndexTip, 12=MiddleTip
+        // Lower joints: 3=ThumbIP, 5=IndexMCP, 9=MiddleMCP
+        
+        const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
+        const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
+        const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
 
-        if (isPinched && !this.state.isPinching) this.onGrabStart(pos, camera);
-        else if (!isPinched && this.state.isPinching) this.onGrabEnd();
+        // "Triangle Check": Ensure tips are somewhat apart (not pinched)
+        // Check distance between Index(8) and Middle(12), and Thumb(4) and Index(8)
+        const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
+        const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
+        
+        const pinchT = CONFIG.INPUT.PINCH_THRESHOLD_START;
+        
+        let newMode = 0; 
 
-        if (this.state.isRotating) this.handleRotation(pos);
-        else if (this.state.grabbedObject) this.handleDrag(pos);
-        else this.checkGizmoHover(pos, camera);
+        // ROTATE MODE: 3 Fingers Straight + NOT Pinched together (Open Triangle)
+        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) {
+            newMode = 2; // Rotate
+        }
+        // GRAB MODE: Thumb + Index Pinched
+        else if (dThumbIndex < pinchT) {
+            newMode = 1; // Grab
+        }
 
-        this.state.isPinching = isPinched;
+        this.sg.updateCursorState(pos, newMode);
+
+        if (newMode === 2) {
+            if (this.state.mode !== 2) {
+                this.state.lastRotPos.copy(pos);
+                Audio.sfxHover();
+            } else {
+                this.handleRotation(pos);
+            }
+            if (this.state.grabbedObject) this.onGrabEnd();
+        } 
+        else if (newMode === 1) {
+            if (this.state.mode !== 1) {
+                this.onGrabStart(pos, camera);
+            } else if (this.state.grabbedObject) {
+                this.handleDrag(pos);
+            }
+        } 
+        else {
+            if (this.state.mode === 1 && this.state.grabbedObject) {
+                this.onGrabEnd();
+            }
+        }
+
+        this.state.mode = newMode;
         this.state.handPos.copy(pos);
-    }
-
-    checkGizmoHover(pos, camera) {
-        const screen = pos.clone().project(camera);
-        this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
-        const hits = this.raycaster.intersectObjects(this.sg.gizmo.children);
-        this.sg.updateGizmoState(hits.length > 0);
     }
 
     onGrabStart(pos, camera) {
         const screen = pos.clone().project(camera);
         this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
         
-        const gizmoHits = this.raycaster.intersectObjects(this.sg.gizmo.children);
-        if (gizmoHits.length > 0) {
-            this.state.isRotating = true;
-            this.state.lastRotPos.copy(pos);
-            this.sg.updateGizmoState(true);
-            Audio.sfxHover();
-            return;
-        }
-
         const partHits = this.raycaster.intersectObjects(this.sg.floatingRoot.children, true);
         let target = null;
         if(partHits.length > 0) target = partHits[0].object;
@@ -911,10 +920,6 @@ class InputSystem {
     }
 
     onGrabEnd() {
-        if (this.state.isRotating) {
-            this.state.isRotating = false;
-            this.sg.updateGizmoState(false);
-        }
         if (this.state.grabbedObject) {
             const type = this.state.grabbedObject.userData.type;
             this.game.setHighlight(type, false);
@@ -931,10 +936,10 @@ class InputSystem {
     handleRotation(pos) {
         const dx = (pos.x - this.state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
         const dy = (pos.y - this.state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
+        
         this.sg.worldRoot.rotation.y += dx;
         this.sg.worldRoot.rotation.x += dy;
-        this.sg.gizmo.children[0].rotation.y += dx;
-        this.sg.gizmo.children[0].rotation.x += dy;
+        
         this.state.lastRotPos.copy(pos);
         if(Math.abs(dx) > 0.05) Audio.sfxRotate();
     }
