@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [COMPACT GRID]</title>
+    <title>TNTU ENGINEERING SUITE v9.9 [DEPENDENCIES]</title>
     
     <style>
         :root {
@@ -29,7 +29,6 @@
             color: var(--primary-color);
         }
 
-        /* --- ЕКРАН ЗАВАНТАЖЕННЯ --- */
         #boot-layer {
             position: absolute;
             top: 0; left: 0;
@@ -91,7 +90,6 @@
             box-shadow: 0 0 40px var(--primary-color);
         }
 
-        /* --- ОСНОВНИЙ ЕКРАН --- */
         #viewport {
             position: relative;
             width: 100vw;
@@ -115,7 +113,6 @@
             z-index: 10;
         }
 
-        /* --- HUD (HEADS-UP DISPLAY) --- */
         #hud-layer {
             position: absolute;
             top: 0; left: 0;
@@ -147,7 +144,6 @@
             color: var(--primary-color);
         }
 
-        /* --- ЕКРАН ПЕРЕМОГИ --- */
         #victory-screen {
             position: absolute;
             top: 50%; left: 50%;
@@ -220,11 +216,10 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.9 "COMPACT GRID"
+ * TNTU ENGINEERING SUITE v9.9 "DEPENDENCIES"
  * ============================================================================
  */
 
-// --- 1. CONFIGURATION REGISTRY ---
 const CONFIG = {
     RENDER: {
         FOV: 60,
@@ -263,8 +258,6 @@ const CONFIG = {
         CURSOR_CLOSED: 0x00aaff 
     }
 };
-
-// --- 2. ADVANCED MATH LIBRARIES ---
 
 class LowPassFilter {
     constructor(alpha) { this.setAlpha(alpha); this.y = null; this.s = null; }
@@ -312,8 +305,6 @@ class Vector3Filter {
     }
 }
 
-// --- 3. AUDIO SYNTHESIS ENGINE ---
-
 class AudioEngine {
     constructor() { this.context = null; this.masterGain = null; this.isInitialized = false; }
     init() {
@@ -346,20 +337,40 @@ class AudioEngine {
 }
 const Audio = new AudioEngine();
 
-// --- 4. PROCEDURAL MODEL FACTORY ---
-
 class ModelFactory {
     static getMaterial(type) {
         switch(type) {
-            case 'metal': return new THREE.MeshStandardMaterial({color: 0xaaaaaa, metalness: 0.8, roughness: 0.2});
-            case 'pcb': return new THREE.MeshStandardMaterial({color: 0x004400, roughness: 0.4});
+            case 'metal': return new THREE.MeshStandardMaterial({color: 0xaaaaaa, metalness: 0.9, roughness: 0.1});
+            case 'dark_metal': return new THREE.MeshStandardMaterial({color: 0x444444, metalness: 0.8, roughness: 0.4});
+            case 'pcb': return new THREE.MeshStandardMaterial({color: 0x004400, roughness: 0.3});
+            case 'chip': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.1});
             case 'plastic': return new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.5});
-            case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.6});
-            case 'battery_body': return new THREE.MeshStandardMaterial({color: 0xffaa00, metalness: 0.3});
-            case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9});
-            case 'green_cover': return new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2});
+            case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.7, roughness: 0.2});
+            case 'battery_body': return new THREE.MeshStandardMaterial({color: 0xffaa00, metalness: 0.3, roughness: 0.4});
+            case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9, flatShading: true});
+            case 'green_cover': return new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 0.95});
+            case 'screen': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.1, metalness: 0.8});
+            case 'button_red': return new THREE.MeshStandardMaterial({color: 0xff3333});
+            case 'sensor_body': return new THREE.MeshStandardMaterial({color: 0x0055ff, roughness: 0.5});
+            case 'sensor_eye': return new THREE.MeshStandardMaterial({color: 0xeeeeee, metalness: 0.1, roughness: 0.1});
+            case 'sensor_pupil': return new THREE.MeshBasicMaterial({color: 0x000000});
             default: return new THREE.MeshBasicMaterial({color: 0xffffff});
         }
+    }
+
+    static createTextTexture(text) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#39ff14'; 
+        ctx.fillRect(0,0,256,64);
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 128, 32);
+        const tex = new THREE.CanvasTexture(canvas);
+        return tex;
     }
 
     static createPart(type) {
@@ -370,56 +381,135 @@ class ModelFactory {
 
         switch(type) {
             case 'gear':
-                const gearGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 24);
-                gearGeo.rotateZ(Math.PI / 2); // Geometry is already rotated!
-                
+                const gearGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 32);
+                gearGeo.rotateZ(Math.PI / 2);
                 const gearBody = new THREE.Mesh(gearGeo, this.getMaterial('plastic'));
-                const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.06, 12), new THREE.MeshBasicMaterial({color:0x000000}));
+                const innerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 16), this.getMaterial('metal'));
+                innerRing.rotation.z = Math.PI / 2;
+                const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 12), new THREE.MeshBasicMaterial({color:0x000000}));
                 hole.rotation.z = Math.PI / 2;
-                
-                group.add(gearBody, hole);
-                
-                for(let i = 0; i < 12; i++) {
+                group.add(gearBody, innerRing, hole);
+                for(let i = 0; i < 16; i++) {
                     const t = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.1), this.getMaterial('plastic'));
-                    const a = (i/12)*Math.PI*2;
-                    t.position.set(0, Math.cos(a)*0.3, Math.sin(a)*0.3);
+                    const a = (i/16)*Math.PI*2;
+                    t.position.set(0, Math.cos(a)*0.48, Math.sin(a)*0.48);
                     t.rotation.x = -a;
                     group.add(t);
                 }
                 break;
 
             case 'wheel':
-                const wGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 32);
+                const wGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 24); 
                 wGeo.rotateZ(Math.PI / 2);
-                
                 const wTire = new THREE.Mesh(wGeo, this.getMaterial('rubber'));
-                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.26, 16), this.getMaterial('metal'));
+                const wRim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.26, 16), this.getMaterial('metal'));
                 wRim.rotation.z = Math.PI / 2;
-                const wHole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.27, 12), new THREE.MeshBasicMaterial({color:0x000000}));
+                for(let i=0; i<4; i++) {
+                    const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 6), this.getMaterial('dark_metal'));
+                    bolt.rotation.z = Math.PI / 2;
+                    const a = (i/4)*Math.PI*2;
+                    bolt.position.set(0, Math.cos(a)*0.15, Math.sin(a)*0.15);
+                    group.add(bolt);
+                }
+                const wHole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.3, 12), new THREE.MeshBasicMaterial({color:0x000000}));
                 wHole.rotation.z = Math.PI / 2;
-                
                 group.add(wTire, wRim, wHole);
                 break;
 
             case 'board':
                 const pcb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.5), this.getMaterial('pcb'));
-                group.add(pcb);
+                const chip1 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 0.2), this.getMaterial('chip'));
+                chip1.position.set(0.2, 0, 0);
+                const chip2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.3), this.getMaterial('chip'));
+                chip2.position.set(-0.2, 0, 0);
+                const pins = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.06, 0.05), this.getMaterial('metal'));
+                pins.position.set(0, 0, 0.2);
+                group.add(pcb, chip1, chip2, pins);
                 break;
 
             case 'battery':
                 const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.6, 16), this.getMaterial('battery_body'));
                 bat.rotation.z = Math.PI / 2;
-                group.add(bat);
+                const posTerm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 12), this.getMaterial('metal'));
+                posTerm.rotation.z = Math.PI / 2;
+                posTerm.position.x = 0.32;
+                const stripe = new THREE.Mesh(new THREE.CylinderGeometry(0.122, 0.122, 0.1, 16), new THREE.MeshBasicMaterial({color: 0x000000}));
+                stripe.rotation.z = Math.PI / 2;
+                stripe.position.x = 0.15;
+                group.add(bat, posTerm, stripe);
                 break;
 
             case 'cover_green':
-                const cov = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.02, 2.5), this.getMaterial('green_cover'));
+                // Height = 2.5 * wheel height (0.25) = 0.625
+                const h = 0.625;
+                const halfH = h / 2;
+                
+                const cov = new THREE.Mesh(new THREE.BoxGeometry(1.6, h, 4.0), this.getMaterial('green_cover'));
                 group.add(cov);
+
+                const yTop = halfH + 0.01;
+
+                // Screen
+                const screen = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 1.0), this.getMaterial('screen'));
+                screen.position.set(0, yTop, -0.5); 
+                group.add(screen);
+
+                // Buttons
+                const bC = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
+                bC.position.set(0, yTop, 0.6);
+                const bT = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
+                bT.position.set(0, yTop, 0.4);
+                const bL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
+                bL.position.set(-0.2, yTop, 0.6);
+                const bR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.05, 0.15), this.getMaterial('button_red'));
+                bR.position.set(0.2, yTop, 0.6);
+                group.add(bC, bT, bL, bR);
+
+                // Labels
+                const lbl1 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({map: this.createTextTexture("1 2 3 4"), transparent:true}));
+                lbl1.rotation.x = -Math.PI / 2;
+                lbl1.position.set(0, yTop-0.001, -1.8);
+                group.add(lbl1);
+
+                const lbl2 = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.25), new THREE.MeshBasicMaterial({map: this.createTextTexture("A B C D"), transparent:true}));
+                lbl2.rotation.x = -Math.PI / 2;
+                lbl2.position.set(0, yTop-0.001, 1.8); 
+                group.add(lbl2);
                 break;
                 
             case 'motor':
-                const mot = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.0), this.getMaterial('plastic'));
-                group.add(mot);
+                const motLen = 1.2;
+                const motRad = 0.45;
+                const cyl = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, motLen, 32), this.getMaterial('metal'));
+                cyl.rotation.z = Math.PI/2;
+                const box = new THREE.Mesh(new THREE.BoxGeometry(motLen, motRad*1.6, motRad*1.6), this.getMaterial('dark_metal'));
+                const holesGroup = new THREE.Group();
+                for(let k=-1; k<=1; k+=2) {
+                    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.2, 8), new THREE.MeshBasicMaterial({color:0x000000}));
+                    hole.rotation.x = Math.PI/2;
+                    hole.position.set(0, 0, k * (motRad * 0.7));
+                    holesGroup.add(hole);
+                }
+                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, motLen + 0.6, 8), this.getMaterial('metal'));
+                shaft.rotation.z = Math.PI/2;
+                group.add(cyl, box, holesGroup, shaft);
+                break;
+
+            case 'sensor':
+                const sPlate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.1), this.getMaterial('sensor_body'));
+                const eyeL = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.2, 16), this.getMaterial('sensor_eye'));
+                eyeL.rotation.x = Math.PI/2;
+                eyeL.position.set(-0.25, 0, 0.1);
+                const pupilL = new THREE.Mesh(new THREE.CircleGeometry(0.08, 16), this.getMaterial('sensor_pupil'));
+                pupilL.position.set(0, 0.11, 0); 
+                pupilL.rotation.x = -Math.PI/2;
+                eyeL.add(pupilL);
+                const glintL = new THREE.Mesh(new THREE.CircleGeometry(0.03, 8), new THREE.MeshBasicMaterial({color:0xffffff}));
+                glintL.position.set(0.03, 0.03, 0.01);
+                pupilL.add(glintL);
+                const eyeR = eyeL.clone();
+                eyeR.position.set(0.25, 0, 0.1);
+                group.add(sPlate, eyeL, eyeR);
                 break;
         }
 
@@ -427,8 +517,6 @@ class ModelFactory {
         return group;
     }
 }
-
-// --- 5. SCENE GRAPH MANAGER ---
 
 class SceneGraph {
     constructor(renderEngine) {
@@ -478,7 +566,6 @@ class SceneGraph {
         const chassis = new THREE.Mesh(geo, mat);
         this.worldRoot.add(chassis);
         
-        // AXLES
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
         const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.6, 12);
         
@@ -492,7 +579,6 @@ class SceneGraph {
         
         const stub = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
         
-        // Left Side
         [-1.0, 0.0, 1.0].forEach(z => {
             const m = new THREE.Mesh(stub, axMat);
             m.rotation.z = Math.PI/2;
@@ -500,7 +586,6 @@ class SceneGraph {
             this.worldRoot.add(m);
         });
 
-        // Right Side
         [-1.2, -0.4, 0.4, 1.2].forEach(z => {
             const m = new THREE.Mesh(stub, axMat);
             m.rotation.z = Math.PI/2;
@@ -524,8 +609,6 @@ class SceneGraph {
     }
 }
 
-// --- 6. GAME LOGIC ---
-
 class GameLogic {
     constructor(sceneGraph) {
         this.sg = sceneGraph;
@@ -548,9 +631,15 @@ class GameLogic {
         this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0), 'TOP');
         this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
         this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
-        this.createSnap('cover_green', new THREE.Vector3(0, 0.15, 0), 'TOP');
+        
+        this.createSnap('cover_green', new THREE.Vector3(0, 0.20, 0), 'TOP');
+        
         this.createSnap('motor', new THREE.Vector3(0, 0.35, 1.2), 'TOP');
         this.createSnap('motor', new THREE.Vector3(0, 0.35, -0.5), 'TOP');
+
+        // SENSOR position (on top of new tall cover)
+        // Cover H=0.625, Base Y=0.20. Top Y ~0.51.
+        this.createSnap('sensor', new THREE.Vector3(0, 0.52, 1.8), 'TOP');
 
         this.spawnLooseParts();
     }
@@ -561,7 +650,7 @@ class GameLogic {
         
         let ghostGeo;
         if(type === 'gear') { 
-            ghostGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.05, 16); 
+            ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
             snap.rotation.z = Math.PI/2; 
         } else if(type === 'wheel') {
             ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
@@ -570,7 +659,9 @@ class GameLogic {
             ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
             snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2;
         } else if(type === 'cover_green') {
-            ghostGeo = new THREE.BoxGeometry(1.2, 0.05, 2.5);
+            ghostGeo = new THREE.BoxGeometry(1.6, 0.625, 4.0);
+        } else if(type === 'sensor') {
+            ghostGeo = new THREE.BoxGeometry(0.8, 0.3, 0.2);
         } else {
             ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
         }
@@ -593,11 +684,14 @@ class GameLogic {
             const type = snap.userData.type;
             const part = ModelFactory.createPart(type);
             
-            // Initial positioning will be handled by rearrangeParts immediately
-            // Just placing them at 0,0,0 initially
             part.position.set(0, 5, 0);
             part.lookAt(0, 0, 10);
             
+            // COVER TRANSFORM LOGIC
+            if (type === 'cover_green') {
+                part.scale.y = 0.2; // Flatten in inventory
+            }
+
             part.userData.type = type;
             part.userData.isInstalled = false;
             part.userData.inInventory = true; 
@@ -607,9 +701,7 @@ class GameLogic {
             this.parts.push(part);
         });
         
-        // Arrange them immediately
         this.rearrangeParts();
-        
         this.updateCounter();
     }
 
@@ -620,7 +712,13 @@ class GameLogic {
 
     checkSnap(part, partPos) {
         let bestSnap = null;
-        let limit = 1.2; 
+        let limit = 1.5; 
+
+        // DEPENDENCY CHECK
+        if (part.userData.type === 'sensor') {
+            const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
+            if (!isCoverInstalled) return null; // Block sensor snap if no cover
+        }
 
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
@@ -639,6 +737,12 @@ class GameLogic {
     }
 
     setHighlight(type, isActive) {
+        // Prevent highlighting sensor slot if cover is missing
+        if (type === 'sensor') {
+            const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
+            if (!isCoverInstalled) return;
+        }
+
         this.snaps.forEach(snap => {
             if (snap.userData.type === type && !snap.userData.occupied) {
                 const mat = snap.userData.mesh.material;
@@ -653,30 +757,19 @@ class GameLogic {
         });
     }
 
-    // --- REARRANGE PARTS: COMPACT GRID ---
     rearrangeParts() {
         const activeParts = this.parts.filter(p => p.userData.inInventory);
         const count = activeParts.length;
-        
-        // Mobile-friendly narrow grid
-        const cols = 4; // Max 4 items width
+        const cols = 4;
         const spacingX = 0.9;
         const spacingY = 0.8;
         
         activeParts.forEach((part, index) => {
             const col = index % cols;
             const row = Math.floor(index / cols);
-            
-            // Center the grid: (col index) - (half of total columns)
-            // Example for 4 cols: indices 0,1,2,3 -> -1.5, -0.5, 0.5, 1.5
             const x = (col - (Math.min(count, cols) - 1) / 2) * spacingX;
-            
-            // Stack upwards starting from Y=1.5 (above chassis)
             const y = 1.5 + (row * spacingY);
-            
-            // Slight Z stagger for style
             const z = 1.0 + (row * 0.1); 
-            
             if (part.userData.basePos) {
                 part.userData.basePos.set(x, y, z);
             }
@@ -689,11 +782,18 @@ class GameLogic {
         
         part.position.copy(snap.position);
         
-        // Fix rotations
-        if (part.userData.type === 'wheel' || part.userData.type === 'gear') {
+        if (part.userData.type === 'wheel' || part.userData.type === 'gear' || part.userData.type === 'motor') {
             part.rotation.set(0, 0, 0); 
+        } else if (part.userData.type === 'sensor') {
+             part.rotation.set(0, 0, 0);
         } else {
             part.rotation.copy(snap.rotation);
+        }
+
+        // EXPAND COVER ON INSTALL
+        if (part.userData.type === 'cover_green') {
+            // Animate scale to 1 (simple assignment for now)
+            part.scale.y = 1.0;
         }
         
         part.userData.isInstalled = true;
@@ -710,8 +810,6 @@ class GameLogic {
         document.getElementById('victory-screen').classList.add('active');
     }
 }
-
-// --- 7. INPUT SYSTEM ---
 
 class InputSystem {
     constructor(game, sceneGraph) {
@@ -803,7 +901,6 @@ class InputSystem {
                 Audio.sfxGrab();
                 this.game.setHighlight(obj.userData.type, true);
                 
-                // Remove from inventory grid immediately
                 if (obj.userData.inInventory) {
                     obj.userData.inInventory = false; 
                     obj.userData.basePos = null;
@@ -848,8 +945,6 @@ class InputSystem {
     }
 }
 
-// --- 8. APPLICATION ---
-
 class Application {
     constructor() {
         this.scene = new THREE.Scene();
@@ -866,20 +961,31 @@ class Application {
         this.input = new InputSystem(this.game, this.sg);
     }
     render() { this.renderer.render(this.scene, this.camera); }
-    start() {
+    
+    async start() { 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7});
         hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) this.input.update(results.multiHandLandmarks[0], this.camera);
             else this.sg.cursor.visible = false;
         });
-        const cam = new Camera(document.getElementById('video-background'), {
-            onFrame: async () => await hands.send({image: document.getElementById('video-background')}),
+        
+        const videoElement = document.getElementById('video-background');
+        const cam = new Camera(videoElement, {
+            onFrame: async () => await hands.send({image: videoElement}),
             width: 1280, height: 720
         });
-        cam.start();
+
+        try {
+            await cam.start(); 
+        } catch (e) {
+            console.error("Camera Error:", e);
+            alert("Помилка: Камера зайнята іншою програмою. Будь ласка, закрийте інші вкладки/програми з камерою і оновіть сторінку.");
+        }
+        
         this.loop();
     }
+
     loop() {
         requestAnimationFrame(() => this.loop());
         const t = Date.now() * 0.001;
