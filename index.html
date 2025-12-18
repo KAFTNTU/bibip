@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [TRIANGLE GESTURE]</title>
+    <title>TNTU ENGINEERING SUITE v9.9 [DUAL HANDS]</title>
     
     <style>
         :root {
@@ -126,25 +126,25 @@
 
         .counter-container {
             position: absolute;
-            bottom: 40px; 
+            bottom: 30px; 
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 5, 10, 0.6);
             border: 1px solid var(--primary-color);
-            border-radius: 20px;
-            padding: 10px 40px;
+            border-radius: 15px;
+            padding: 5px 20px;
             backdrop-filter: blur(5px);
-            box-shadow: 0 0 30px rgba(0, 255, 204, 0.2);
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.1);
             text-align: center;
         }
 
         #part-counter {
             font-family: var(--mono-font);
-            font-size: 36px;
+            font-size: 14px;
             font-weight: 700;
             color: #fff;
             letter-spacing: 2px;
-            text-shadow: 0 0 10px var(--primary-color);
+            text-shadow: 0 0 5px var(--primary-color);
         }
 
         /* --- ЕКРАН ПЕРЕМОГИ --- */
@@ -218,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.9 "TRIANGLE GESTURE"
+ * TNTU ENGINEERING SUITE v9.9 [DUAL HANDS]
  * ============================================================================
  */
 
@@ -230,7 +230,7 @@ const CONFIG = {
         SHADOW_MAP_SIZE: 2048
     },
     PHYSICS: {
-        ROTATION_SPEED: 0.9, // Зменшено на 60% (було 1.5)
+        ROTATION_SPEED: 0.6, // Optimal speed
         LERP_FACTOR: 0.2, 
         SNAP_DISTANCE: 0.8,
         GRAB_RADIUS: 1.5,
@@ -504,7 +504,7 @@ class ModelFactory {
                 break;
         }
 
-        group.userData = { isPart: true, parentGroup: group };
+        group.userData = { isPart: true, parentGroup: group, grabbedBy: -1 }; // Track which hand grabbed it
         return group;
     }
 }
@@ -520,10 +520,9 @@ class SceneGraph {
         this.floatingRoot.position.set(0, 0, -5);
         this.re.scene.add(this.floatingRoot);
 
-        // GIZMO REMOVED - using gesture instead
-
-        this.cursor = this.createCursor();
-        this.re.scene.add(this.cursor);
+        // CREATE 2 CURSORS FOR 2 HANDS
+        this.cursors = [this.createCursor(), this.createCursor()];
+        this.cursors.forEach(c => this.re.scene.add(c));
 
         this.initChassis();
     }
@@ -572,17 +571,17 @@ class SceneGraph {
         });
     }
 
-    // No gizmo state anymore
-
-    updateCursorState(pos, mode) {
-        // mode: 0=Open, 1=Closed (Grab), 2=Rotate
-        this.cursor.visible = true;
-        this.cursor.position.copy(pos);
+    updateCursorState(index, pos, mode) {
+        if (index >= this.cursors.length) return;
+        
+        const cursor = this.cursors[index];
+        cursor.visible = true;
+        cursor.position.copy(pos);
         
         let col = CONFIG.THEME.CURSOR_OPEN;
         let scale = 1.2;
 
-        if (mode === 1) { // Pinch/Grab
+        if (mode === 1) { // Grab
             col = CONFIG.THEME.CURSOR_CLOSED;
             scale = 0.8;
         } else if (mode === 2) { // Rotate
@@ -590,9 +589,13 @@ class SceneGraph {
             scale = 1.5;
         }
 
-        this.cursor.userData.dot.material.color.setHex(col);
-        this.cursor.userData.ring.material.color.setHex(col);
-        this.cursor.userData.ring.scale.setScalar(scale);
+        cursor.userData.dot.material.color.setHex(col);
+        cursor.userData.ring.material.color.setHex(col);
+        cursor.userData.ring.scale.setScalar(scale);
+    }
+
+    hideCursors() {
+        this.cursors.forEach(c => c.visible = false);
     }
 }
 
@@ -758,7 +761,7 @@ class GameLogic {
         });
     }
 
-    installPart(part, snap) {
+    installPart(part, snap, handIndex) {
         this.sg.floatingRoot.remove(part);
         this.sg.worldRoot.add(part);
         
@@ -777,6 +780,7 @@ class GameLogic {
         }
         
         part.userData.isInstalled = true;
+        part.userData.grabbedBy = -1; // Release
         snap.userData.occupied = true;
         snap.visible = false;
         
@@ -796,18 +800,16 @@ class InputSystem {
         this.game = game;
         this.sg = sceneGraph;
         this.raycaster = new THREE.Raycaster();
-        this.filter = new Vector3Filter();
         
-        this.state = {
-            handPos: new THREE.Vector3(),
-            mode: 0, // 0=None, 1=Grab, 2=Rotate
-            grabbedObject: null,
-            potentialSnap: null,
-            lastRotPos: new THREE.Vector3()
-        };
+        // Multi-hand states
+        this.states = [
+            { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() },
+            { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() }
+        ];
+        
+        this.filters = [new Vector3Filter(), new Vector3Filter()];
     }
 
-    // Helper: Check if finger is straight (extended)
     // Heuristic: Distance from Wrist (0) to Tip (4/8/12) > Distance from Wrist to lower joint (3/5/9) * 1.2
     isStraight(wrist, tip, lowerJoint) {
         const dTip = Math.sqrt(Math.pow(wrist.x - tip.x, 2) + Math.pow(wrist.y - tip.y, 2));
@@ -815,12 +817,31 @@ class InputSystem {
         return dTip > dLower * 1.2;
     }
 
-    update(landmarks, camera) {
+    update(results, camera) {
         const now = performance.now() / 1000;
+        
+        // Reset cursors if hands lost
+        this.sg.hideCursors();
+
+        if (!results.multiHandLandmarks) return;
+
+        results.multiHandLandmarks.forEach((landmarks, index) => {
+            if (index >= 2) return; // Support max 2 hands
+            this.processHand(landmarks, index, camera, now);
+        });
+    }
+
+    processHand(landmarks, index, camera, now) {
+        const state = this.states[index];
         const s = CONFIG.INPUT.CURSOR_SENSITIVITY;
         
-        const x = ((1 - landmarks[8].x) * 2 - 1) * s;
-        const y = (-landmarks[8].y * 2 + 1) * s;
+        // Calculate MIDPOINT between Thumb (4) and Index (8) tips
+        const midX = (landmarks[8].x + landmarks[4].x) / 2;
+        const midY = (landmarks[8].y + landmarks[4].y) / 2;
+        
+        // Screen mapping
+        const x = ((1 - midX) * 2 - 1) * s;
+        const y = (-midY * 2 + 1) * s;
         
         const rawVec = new THREE.Vector3(x, y, 0.5);
         rawVec.unproject(camera);
@@ -828,19 +849,14 @@ class InputSystem {
         const dist = (-5 - camera.position.z) / dir.z; 
         const rawPos = camera.position.clone().add(dir.multiplyScalar(dist));
 
-        const pos = this.filter.process(rawPos, now);
-        
+        const pos = this.filters[index].process(rawPos, now);
         const asp = window.innerWidth / window.innerHeight;
-        
-        // Landmarks: 0=Wrist, 4=ThumbTip, 8=IndexTip, 12=MiddleTip
-        // Lower joints: 3=ThumbIP, 5=IndexMCP, 9=MiddleMCP
-        
+
+        // Landmarks logic (Same as before)
         const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
         const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
         const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
 
-        // "Triangle Check": Ensure tips are somewhat apart (not pinched)
-        // Check distance between Index(8) and Middle(12), and Thumb(4) and Index(8)
         const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
         const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
         
@@ -848,44 +864,44 @@ class InputSystem {
         
         let newMode = 0; 
 
-        // ROTATE MODE: 3 Fingers Straight + NOT Pinched together (Open Triangle)
+        // ROTATE: 3 Fingers Straight + Tips Apart
         if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) {
-            newMode = 2; // Rotate
+            newMode = 2; 
         }
-        // GRAB MODE: Thumb + Index Pinched
+        // GRAB: Thumb + Index Pinched
         else if (dThumbIndex < pinchT) {
-            newMode = 1; // Grab
+            newMode = 1; 
         }
 
-        this.sg.updateCursorState(pos, newMode);
+        this.sg.updateCursorState(index, pos, newMode);
 
         if (newMode === 2) {
-            if (this.state.mode !== 2) {
-                this.state.lastRotPos.copy(pos);
+            if (state.mode !== 2) {
+                state.lastRotPos.copy(pos);
                 Audio.sfxHover();
             } else {
-                this.handleRotation(pos);
+                this.handleRotation(state, pos);
             }
-            if (this.state.grabbedObject) this.onGrabEnd();
+            if (state.grabbedObject) this.onGrabEnd(state);
         } 
         else if (newMode === 1) {
-            if (this.state.mode !== 1) {
-                this.onGrabStart(pos, camera);
-            } else if (this.state.grabbedObject) {
-                this.handleDrag(pos);
+            if (state.mode !== 1) {
+                this.onGrabStart(state, pos, camera, index);
+            } else if (state.grabbedObject) {
+                this.handleDrag(state, pos);
             }
         } 
         else {
-            if (this.state.mode === 1 && this.state.grabbedObject) {
-                this.onGrabEnd();
+            if (state.mode === 1 && state.grabbedObject) {
+                this.onGrabEnd(state);
             }
         }
 
-        this.state.mode = newMode;
-        this.state.handPos.copy(pos);
+        state.mode = newMode;
+        state.handPos.copy(pos);
     }
 
-    onGrabStart(pos, camera) {
+    onGrabStart(state, pos, camera, handIndex) {
         const screen = pos.clone().project(camera);
         this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
         
@@ -905,8 +921,16 @@ class InputSystem {
         if (target) {
             let obj = target;
             while(obj.parent && obj.parent !== this.sg.floatingRoot) obj = obj.parent;
+            
+            // Check if already grabbed by OTHER hand
+            if (obj.userData.grabbedBy !== -1 && obj.userData.grabbedBy !== undefined && obj.userData.grabbedBy !== handIndex) {
+                return; // Already grabbed by someone else
+            }
+
             if (obj.userData.type && !obj.userData.isInstalled) {
-                this.state.grabbedObject = obj;
+                state.grabbedObject = obj;
+                obj.userData.grabbedBy = handIndex; // Lock object
+                
                 Audio.sfxGrab();
                 this.game.setHighlight(obj.userData.type, true);
                 
@@ -919,34 +943,37 @@ class InputSystem {
         }
     }
 
-    onGrabEnd() {
-        if (this.state.grabbedObject) {
-            const type = this.state.grabbedObject.userData.type;
+    onGrabEnd(state) {
+        if (state.grabbedObject) {
+            const type = state.grabbedObject.userData.type;
             this.game.setHighlight(type, false);
 
-            if (this.state.potentialSnap) {
-                this.game.installPart(this.state.grabbedObject, this.state.potentialSnap);
+            if (state.potentialSnap) {
+                this.game.installPart(state.grabbedObject, state.potentialSnap, state.grabbedObject.userData.grabbedBy);
+            } else {
+                // Drop into void
+                state.grabbedObject.userData.grabbedBy = -1; // Unlock
             }
             
-            this.state.grabbedObject = null;
-            this.state.potentialSnap = null;
+            state.grabbedObject = null;
+            state.potentialSnap = null;
         }
     }
 
-    handleRotation(pos) {
-        const dx = (pos.x - this.state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
-        const dy = (pos.y - this.state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
+    handleRotation(state, pos) {
+        const dx = (pos.x - state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
+        const dy = (pos.y - state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
         
         this.sg.worldRoot.rotation.y += dx;
         this.sg.worldRoot.rotation.x += dy;
         
-        this.state.lastRotPos.copy(pos);
-        if(Math.abs(dx) > 0.05) Audio.sfxRotate();
+        state.lastRotPos.copy(pos);
+        // Audio.sfxRotate(); // Optional: too noisy with 2 hands?
     }
 
-    handleDrag(pos) {
-        this.state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
-        this.state.potentialSnap = this.game.checkSnap(this.state.grabbedObject, pos);
+    handleDrag(state, pos) {
+        state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
+        state.potentialSnap = this.game.checkSnap(state.grabbedObject, pos);
     }
 }
 
@@ -969,10 +996,11 @@ class Application {
     
     async start() { 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7});
+        // ENABLE 2 HANDS HERE
+        hands.setOptions({maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7});
         hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) this.input.update(results.multiHandLandmarks[0], this.camera);
-            else this.sg.cursor.visible = false;
+            // Pass full results to support multi-hand
+            this.input.update(results, this.camera);
         });
         
         const videoElement = document.getElementById('video-background');
@@ -1007,7 +1035,8 @@ class Application {
                 c.position.z += (targetZ - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
                 
                 c.rotation.z += 0.002;
-            } else if (!c.userData.isInstalled && c !== this.input.state.grabbedObject) {
+            } else if (!c.userData.isInstalled && c.userData.grabbedBy === -1) {
+                // Animate floating parts only if NOT held by ANY hand
                 c.rotation.z += 0.002;
                 c.rotation.y += 0.001;
             }
