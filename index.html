@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [FULL VERSION]</title>
+    <title>TNTU ENGINEERING SUITE v9.9 [FIXED]</title>
     
     <style>
         :root {
@@ -222,11 +222,11 @@
  * ============================================================================
  */
 
-// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР ▼▼▼
+// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР (Локальні файли) ▼▼▼
 const TEXTURE_URLS = {
-    TOP: 'photo/top.png',         // Верхнє фото (850x1791)
-    SIDE_LONG: 'photo/side_long.png',  // Довгий бік
-    SIDE_SHORT: 'photo/side_short.png' // Короткий бік
+    TOP: 'photo/top.png',          // Верхнє фото (850x1791)
+    SIDE_LONG: 'photo/side_long.png',   // Довгий бік
+    SIDE_SHORT: 'photo/side_short.png'  // Короткий бік
 };
 
 const CONFIG = {
@@ -282,6 +282,7 @@ function loadTex(url) {
     );
 }
 
+// Завантажуємо текстури
 if (TEXTURE_URLS.TOP) textures.top = loadTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
@@ -449,17 +450,17 @@ class ModelFactory {
                 const d = 4.0;  
 
                 let materials;
-
+                
+                // Fallback матеріал (непрозорий)
+                const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
+                
                 if (textures.top) {
-                    // Якщо головне фото є, формуємо мульти-матеріал
-                   const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });;
-                    
-                    // Якщо бокові фото не завантажились, використовуємо пластик
-                    const darkPlastic = this.getMaterial('plastic');
-                    
-                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long }) : darkPlastic; 
-                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short }) : darkPlastic;
-                    const matBottom = darkPlastic;
+                    // Якщо текстури є, створюємо мульти-матеріал
+                    // Примусово ставимо transparent: false
+                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });
+                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: false, opacity: 1.0 }) : fallbackMat; 
+                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: false, opacity: 1.0 }) : fallbackMat;
+                    const matBottom = fallbackMat;
 
                     // Порядок матеріалів BoxGeometry:
                     // 0: Right (x+), 1: Left (x-), 2: Top (y+), 3: Bottom (y-), 4: Front (z+), 5: Back (z-)
@@ -472,8 +473,7 @@ class ModelFactory {
                         matShort  // Back
                     ];
                 } else {
-                    // Fallback: ТЕПЕР СУЦІЛЬНИЙ, НЕ ПРОЗОРИЙ
-                    materials = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
+                    materials = fallbackMat;
                 }
 
                 const cov = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
@@ -765,6 +765,7 @@ class GameLogic {
         });
     }
 
+    // --- ГОЛОВНА ФУНКЦІЯ ІНСТАЛЯЦІЇ (ВИПРАВЛЕНО) ---
     installPart(part, snap, handIndex) {
         this.sg.floatingRoot.remove(part);
         this.sg.worldRoot.add(part);
@@ -780,6 +781,22 @@ class GameLogic {
         if (part.userData.type === 'cover_green') {
             part.scale.y = 1.0;
         }
+
+        // --- ВИПРАВЛЕННЯ ПРОЗОРОСТІ ДЛЯ ВСІХ ДЕТАЛЕЙ ---
+        // Використовуємо traverse, щоб знайти всі Mesh всередині групи
+        part.traverse((child) => {
+            if (child.isMesh) {
+                // Перевіряємо, чи матеріал є масивом (мульти-матеріал) чи одним об'єктом
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                
+                materials.forEach(mat => {
+                    mat.transparent = false;
+                    mat.opacity = 1.0;
+                    mat.depthWrite = true; // Важливо для коректного перекриття
+                    mat.needsUpdate = true;
+                });
+            }
+        });
         
         part.userData.isInstalled = true;
         part.userData.grabbedBy = -1; // Release
