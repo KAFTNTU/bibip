@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.92 [DISPENSERS]</title>
+    <title>TNTU ENGINEERING SUITE v10.1 [FIXED GEAR ROTATION]</title>
     
     <style>
         :root {
@@ -218,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.92 [DISPENSERS UPDATE]
+ * TNTU ENGINEERING SUITE v10.1 [FIXED GEAR ROTATION]
  * ============================================================================
  */
 
@@ -227,7 +227,7 @@ const TEXTURE_URLS = {
     TOP: 'photo/top.jpg',          // Верхнє фото
     SIDE_LONG: 'photo/side_long.jpg',   // Довгий бік
     SIDE_SHORT: 'photo/side_short.jpg', // Короткий бік
-    CHASSIS: 'photo/top.jpg' // Текстура для рами (використовуємо ту ж саму, або іншу)
+    CHASSIS: 'photo/top.jpg' // Текстура для рами
 };
 
 const CONFIG = {
@@ -244,7 +244,8 @@ const CONFIG = {
         GRAB_RADIUS: 1.5,
         BOB_SPEED: 2.0, 
         BOB_HEIGHT: 0.1, 
-        REARRANGE_SPEED: 0.08 
+        REARRANGE_SPEED: 0.08,
+        DISPENSER_COOLDOWN: 5000 // 5 секунд кулдаун
     },
     INPUT: {
         PINCH_THRESHOLD_START: 0.04,
@@ -258,14 +259,18 @@ const CONFIG = {
     THEME: {
         PRIMARY: 0x00ffcc,
         CHASSIS_COLOR: 0x228822,
-        GHOST_VALID: 0x00ff00, 
+        INTERNAL_GREEN: 0x116611,
+        
+        GHOST_VALID: 0x00ff00,     
         GHOST_HIGHLIGHT: 0xff0000, 
+        
         GHOST_INVALID: 0xff0000,
         CURSOR_OPEN: 0xff0000, 
         CURSOR_CLOSED: 0x00aaff,
         CURSOR_ROTATE: 0xffff00,
         DISPENSER_BASE: 0x004466,
-        DISPENSER_HOVER: 0x0088cc
+        DISPENSER_HOVER: 0x0088cc,
+        DISPENSER_COOLDOWN_COLOR: 0x330000 
     }
 };
 
@@ -398,14 +403,53 @@ class ModelFactory {
 
         switch(type) {
             case 'gear':
-                const gearGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 32);
-                gearGeo.rotateZ(Math.PI / 2);
-                const gearBody = new THREE.Mesh(gearGeo, this.getMaterial('plastic'));
-                const innerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.06, 16), this.getMaterial('metal'));
-                innerRing.rotation.z = Math.PI / 2;
-                const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 12), new THREE.MeshBasicMaterial({color:0x000000}));
-                hole.rotation.z = Math.PI / 2;
-                group.add(gearBody, innerRing, hole);
+                // *** ДЕТАЛІЗОВАНА ШЕСТЕРНЯ ***
+                const numTeeth = 16;
+                const radius = 0.48;
+                const innerRad = 0.40;
+                const thickness = 0.05;
+                const holeRad = 0.15; 
+
+                const gearShape = new THREE.Shape();
+                const step = (Math.PI * 2) / numTeeth;
+                
+                for (let i = 0; i < numTeeth; i++) {
+                    const a1 = i * step;
+                    const a2 = a1 + step * 0.25;
+                    const a3 = a1 + step * 0.5;
+                    const a4 = a1 + step * 0.75;
+                    
+                    if (i === 0) gearShape.moveTo(Math.cos(a1) * innerRad, Math.sin(a1) * innerRad);
+                    else gearShape.lineTo(Math.cos(a1) * innerRad, Math.sin(a1) * innerRad);
+                    
+                    gearShape.lineTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
+                    gearShape.lineTo(Math.cos(a2) * radius, Math.sin(a2) * radius);
+                    gearShape.lineTo(Math.cos(a3) * innerRad, Math.sin(a3) * innerRad);
+                }
+                
+                const holePath = new THREE.Path();
+                holePath.absarc(0, 0, holeRad, 0, Math.PI * 2, true);
+                gearShape.holes.push(holePath);
+
+                const extrudeSettings = { depth: thickness, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 2 };
+                const gearGeom = new THREE.ExtrudeGeometry(gearShape, extrudeSettings);
+                
+                gearGeom.translate(0, 0, -thickness/2);
+
+                const gearBody = new THREE.Mesh(gearGeom, this.getMaterial('plastic'));
+                
+                const innerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, thickness + 0.02, 16), this.getMaterial('metal'));
+                innerRing.rotation.x = Math.PI / 2;
+                
+                const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, thickness + 0.04, 8), new THREE.MeshBasicMaterial({color: 0x222222}));
+                pin.rotation.x = Math.PI / 2;
+
+                const gearVisGroup = new THREE.Group();
+                gearVisGroup.add(gearBody);
+                gearVisGroup.add(innerRing);
+                gearVisGroup.add(pin);
+                
+                group.add(gearVisGroup);
                 break;
 
             case 'wheel':
@@ -464,12 +508,12 @@ class ModelFactory {
                 break;
                 
             case 'motor':
-                const motLen = 1.2;
-                const motRad = 0.45;
+                const motLen = 0.78; 
+                const motRad = 0.30;
                 const cyl = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, motLen, 32), this.getMaterial('metal'));
                 cyl.rotation.z = Math.PI/2;
                 const box = new THREE.Mesh(new THREE.BoxGeometry(motLen, motRad*1.6, motRad*1.6), this.getMaterial('dark_metal'));
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, motLen + 0.6, 8), this.getMaterial('metal'));
+                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, motLen + 0.4, 8), this.getMaterial('metal'));
                 shaft.rotation.z = Math.PI/2;
                 group.add(cyl, box, shaft);
                 break;
@@ -534,14 +578,26 @@ class SceneGraph {
         
         let materials;
         const fallbackMat = new THREE.MeshPhongMaterial({color: CONFIG.THEME.CHASSIS_COLOR});
+        
+        // Матеріал для "нутрощів" (верхня грань, поки немає кришки)
+        const internalMat = new THREE.MeshStandardMaterial({
+            color: CONFIG.THEME.INTERNAL_GREEN, 
+            roughness: 0.8
+        });
 
         if (textures.chassis) {
-            const matTop = new THREE.MeshStandardMaterial({ map: textures.chassis });
             const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long }) : fallbackMat; 
             const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short }) : fallbackMat;
             const matBottom = fallbackMat;
             
-            materials = [ matLong, matLong, matTop, matBottom, matShort, matShort ];
+            materials = [ 
+                matLong,      // Right
+                matLong,      // Left
+                internalMat,  // TOP 
+                matBottom,    // Bottom
+                matShort,     // Front
+                matShort      // Back
+            ];
         } else {
             materials = fallbackMat;
         }
@@ -593,24 +649,17 @@ class SceneGraph {
 
     hideCursors() { this.cursors.forEach(c => c.visible = false); }
 
-    // Створення візуалу диспенсера
     createDispenser(type, pos) {
         const group = new THREE.Group();
         group.position.copy(pos);
-
-        // Основа
         const base = new THREE.Mesh(
             new THREE.BoxGeometry(1.2, 0.1, 1.2),
             new THREE.MeshStandardMaterial({color: CONFIG.THEME.DISPENSER_BASE, metalness: 0.5})
         );
         group.add(base);
-
-        // Текст/Іконка (спрощено - просто модель деталі, що обертається)
         const preview = ModelFactory.createPart(type);
         preview.scale.setScalar(0.7);
         preview.position.set(0, 0.5, 0);
-        
-        // Зробимо прев'ю трохи прозорим або голографічним
         preview.traverse(c => {
             if(c.isMesh) {
                 c.material = c.material.clone();
@@ -620,23 +669,19 @@ class SceneGraph {
                 c.material.emissiveIntensity = 0.2;
             }
         });
-        
         group.add(preview);
-
-        // Хітбокс для взаємодії
         const hitbox = new THREE.Mesh(
             new THREE.BoxGeometry(1.5, 1.5, 1.5),
             new THREE.MeshBasicMaterial({visible: false})
         );
         group.add(hitbox);
-
         group.userData = { 
             isDispenser: true, 
             type: type, 
             previewMesh: preview,
-            baseMesh: base 
+            baseMesh: base,
+            lastDispenseTime: 0 
         };
-        
         this.dispenserRoot.add(group);
         return group;
     }
@@ -649,13 +694,10 @@ class GameLogic {
         this.snaps = [];
         this.installedCount = 0;
         this.totalParts = 0;
-        
-        // Лічильники для диспенсерів
         this.counts = {
             wheel: { current: 0, max: 0 },
             gear: { current: 0, max: 0 }
         };
-
         this.dispensers = [];
         this.initLevel();
     }
@@ -687,6 +729,7 @@ class GameLogic {
         
         let ghostGeo;
         if(type === 'gear') { 
+            // Для привидів використовуємо прості циліндри для швидкодії, але трохи менші
             ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
             snap.rotation.z = Math.PI/2; 
         } else if(type === 'wheel') {
@@ -714,7 +757,6 @@ class GameLogic {
         this.snaps.push(snap);
         this.totalParts++;
 
-        // Оновлюємо ліміти для диспенсерів
         if (this.counts[type]) {
             this.counts[type].max++;
         }
@@ -723,8 +765,6 @@ class GameLogic {
     spawnLooseParts() {
         this.snaps.forEach((snap, index) => {
             const type = snap.userData.type;
-            
-            // ПРОПУСКАЄМО КОЛЕСА ТА ШЕСТЕРНІ - вони будуть в диспенсерах
             if (type === 'wheel' || type === 'gear') return;
 
             const part = ModelFactory.createPart(type);
@@ -737,35 +777,42 @@ class GameLogic {
             this.sg.floatingRoot.add(part);
             this.parts.push(part);
         });
-        
         this.rearrangeParts();
         this.updateCounter();
     }
 
     setupDispensers() {
-        // Додаємо диспенсери у сцену
-        // Wheel Dispenser (Ліворуч)
         this.dispensers.push(this.sg.createDispenser('wheel', new THREE.Vector3(-2.2, 2.0, -1.0)));
-        // Gear Dispenser (Праворуч)
         this.dispensers.push(this.sg.createDispenser('gear', new THREE.Vector3(2.2, 2.0, -1.0)));
     }
 
-    tryDispense(type) {
+    tryDispense(type, dispenserObj) {
+        const now = Date.now();
+        if (dispenserObj.userData.lastDispenseTime && (now - dispenserObj.userData.lastDispenseTime < CONFIG.PHYSICS.DISPENSER_COOLDOWN)) {
+            Audio.sfxError(); 
+            return null;
+        }
+
         if (!this.counts[type]) return null;
         if (this.counts[type].current >= this.counts[type].max) {
             Audio.sfxError();
-            return null; // Ліміт вичерпано
+            return null; 
         }
 
         const part = ModelFactory.createPart(type);
         part.userData.type = type;
         part.userData.isInstalled = false;
-        part.userData.inInventory = false; // Одразу не в інвентарі, а в руці
+        part.userData.inInventory = false; 
         
+        // --- ВИПРАВЛЕНО: НЕ ПОВЕРТАЄМО ШЕСТЕРНЮ БОКОМ ---
+        // Якщо це шестерня, залишаємо її як є (ExtrudeGeometry facing Z)
+        // if (type === 'gear') { part.rotation.y = Math.PI/2; } // ВИДАЛЕНО
+
         this.sg.floatingRoot.add(part);
         this.parts.push(part);
         
         this.counts[type].current++;
+        dispenserObj.userData.lastDispenseTime = now; 
         Audio.sfxDispense();
         
         return part;
@@ -802,8 +849,13 @@ class GameLogic {
         this.snaps.forEach(snap => {
             if (snap.userData.type === type && !snap.userData.occupied) {
                 const mat = snap.userData.mesh.material;
-                if (isActive) { mat.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); mat.opacity = 0.8; } 
-                else { mat.color.setHex(CONFIG.THEME.GHOST_VALID); mat.opacity = 0.3; }
+                if (isActive) {
+                    mat.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); 
+                    mat.opacity = 0.8;
+                } else {
+                    mat.color.setHex(CONFIG.THEME.GHOST_VALID); 
+                    mat.opacity = 0.3;
+                }
             }
         });
     }
@@ -811,14 +863,12 @@ class GameLogic {
     rearrangeParts() {
         const activeParts = this.parts.filter(p => p.userData.inInventory);
         const count = activeParts.length;
-        const cols = 2; // Менше стовпців, бо менше деталей
+        const cols = 2; 
         const spacingX = 1.0;
         const spacingY = 0.8;
-        
         activeParts.forEach((part, index) => {
             const col = index % cols;
             const row = Math.floor(index / cols);
-            // Центруємо грід
             const x = (col - 0.5) * spacingX;
             const y = 1.5 + (row * spacingY);
             const z = 1.0 + (row * 0.1); 
@@ -833,8 +883,14 @@ class GameLogic {
         this.sg.worldRoot.add(part);
         part.position.copy(snap.position);
         
-        if (['wheel', 'gear', 'motor', 'sensor'].includes(part.userData.type)) part.rotation.set(0, 0, 0); 
-        else part.rotation.copy(snap.rotation);
+        if (part.userData.type === 'gear') {
+            // --- ВИПРАВЛЕНО: Повертаємо шестерню боком ТІЛЬКИ при встановленні ---
+            part.rotation.set(0, Math.PI/2, 0);
+        } else if (['wheel', 'motor', 'sensor'].includes(part.userData.type)) {
+            part.rotation.set(0, 0, 0); 
+        } else {
+            part.rotation.copy(snap.rotation);
+        }
 
         if (part.userData.type === 'cover_green') part.scale.y = 1.0;
 
@@ -888,10 +944,19 @@ class InputSystem {
         const now = performance.now() / 1000;
         this.sg.hideCursors();
         if (!results.multiHandLandmarks) return;
-
-        // Анімація диспенсерів (обертання прев'ю)
+        
+        const nowMs = Date.now();
         this.game.dispensers.forEach(d => {
-            if(d.userData.previewMesh) d.userData.previewMesh.rotation.y += 0.02;
+            if (d.userData.previewMesh) d.userData.previewMesh.rotation.z += 0.02; // Крутимо по Z, бо Extrude
+            
+            if (d.userData.baseMesh) {
+                const timeLeft = CONFIG.PHYSICS.DISPENSER_COOLDOWN - (nowMs - d.userData.lastDispenseTime);
+                if (timeLeft > 0) {
+                    d.userData.baseMesh.material.color.setHex(CONFIG.THEME.DISPENSER_COOLDOWN_COLOR);
+                } else {
+                    d.userData.baseMesh.material.color.setHex(CONFIG.THEME.DISPENSER_BASE);
+                }
+            }
         });
 
         results.multiHandLandmarks.forEach((landmarks, index) => {
@@ -955,26 +1020,24 @@ class InputSystem {
         const screen = pos.clone().project(camera);
         this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
         
-        // 1. Перевірка на Диспенсери (Generators)
         const dispenserHits = this.raycaster.intersectObjects(this.sg.dispenserRoot.children, true);
         if (dispenserHits.length > 0) {
             let dObj = dispenserHits[0].object;
             while(dObj.parent && dObj.parent !== this.sg.dispenserRoot) dObj = dObj.parent;
             
             if (dObj.userData.isDispenser) {
-                const newPart = this.game.tryDispense(dObj.userData.type);
+                const newPart = this.game.tryDispense(dObj.userData.type, dObj); 
                 if (newPart) {
-                    newPart.position.copy(dObj.position); // Поява на диспенсері
-                    newPart.position.z += 0.5; // Трохи ближче до камери
+                    newPart.position.copy(dObj.position); 
+                    newPart.position.z += 0.5; 
                     state.grabbedObject = newPart;
                     newPart.userData.grabbedBy = handIndex;
                     this.game.setHighlight(newPart.userData.type, true);
-                    return; // Успішно взяли нову деталь
+                    return; 
                 }
             }
         }
 
-        // 2. Перевірка на Звичайні деталі
         const partHits = this.raycaster.intersectObjects(this.sg.floatingRoot.children, true);
         let target = null;
         if(partHits.length > 0) target = partHits[0].object;
@@ -1018,9 +1081,6 @@ class InputSystem {
                 this.game.installPart(state.grabbedObject, state.potentialSnap, state.grabbedObject.userData.grabbedBy);
             } else {
                 state.grabbedObject.userData.grabbedBy = -1; 
-                
-                // Якщо кинули деталь, яку взяли з диспенсера, вона просто падає/залишається
-                // Можна було б видаляти, якщо кинули далеко, але поки хай залишається
             }
             state.grabbedObject = null;
             state.potentialSnap = null;
@@ -1082,7 +1142,9 @@ class Application {
                 c.position.x += (c.userData.basePos.x - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
                 c.position.y += (c.userData.basePos.y + bobOffset - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
                 c.position.z += (c.userData.basePos.z - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                c.rotation.z += 0.002;
+                
+                // --- АНІМАЦІЯ: Крутимо по Z, щоб виглядало як колесо, що котиться ---
+                c.rotation.z += 0.002; 
             } else if (!c.userData.isInstalled && c.userData.grabbedBy === -1) {
                 c.rotation.z += 0.002; c.rotation.y += 0.001;
             }
