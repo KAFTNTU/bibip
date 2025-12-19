@@ -452,7 +452,7 @@ class ModelFactory {
 
                 if (textures.top) {
                     // Якщо головне фото є, формуємо мульти-матеріал
-                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top });
+                   const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });;
                     
                     // Якщо бокові фото не завантажились, використовуємо пластик
                     const darkPlastic = this.getMaterial('plastic');
@@ -472,8 +472,8 @@ class ModelFactory {
                         matShort  // Back
                     ];
                 } else {
-                    // Fallback: зелений прозорий пластик
-                    materials = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 0.95});
+                    // Fallback: ТЕПЕР СУЦІЛЬНИЙ, НЕ ПРОЗОРИЙ
+                    materials = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
                 }
 
                 const cov = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
