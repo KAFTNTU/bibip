@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v9.9 [FIXED]</title>
+    <title>TNTU ENGINEERING SUITE v9.92 [DISPENSERS]</title>
     
     <style>
         :root {
@@ -218,15 +218,16 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v9.9 [FULL COMBINED VERSION]
+ * TNTU ENGINEERING SUITE v9.92 [DISPENSERS UPDATE]
  * ============================================================================
  */
 
-// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР (Локальні файли) ▼▼▼
+// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР ▼▼▼
 const TEXTURE_URLS = {
-    TOP: 'photo/top.jpg',          // Верхнє фото (850x1791)
+    TOP: 'photo/top.jpg',          // Верхнє фото
     SIDE_LONG: 'photo/side_long.jpg',   // Довгий бік
-    SIDE_SHORT: 'photo/side_short.jpg'  // Короткий бік
+    SIDE_SHORT: 'photo/side_short.jpg', // Короткий бік
+    CHASSIS: 'photo/top.jpg' // Текстура для рами (використовуємо ту ж саму, або іншу)
 };
 
 const CONFIG = {
@@ -257,19 +258,19 @@ const CONFIG = {
     THEME: {
         PRIMARY: 0x00ffcc,
         CHASSIS_COLOR: 0x228822,
-        COVER_GREEN: 0x39ff14,
         GHOST_VALID: 0x00ff00, 
         GHOST_HIGHLIGHT: 0xff0000, 
         GHOST_INVALID: 0xff0000,
         CURSOR_OPEN: 0xff0000, 
         CURSOR_CLOSED: 0x00aaff,
-        CURSOR_ROTATE: 0xffff00
+        CURSOR_ROTATE: 0xffff00,
+        DISPENSER_BASE: 0x004466,
+        DISPENSER_HOVER: 0x0088cc
     }
 };
 
-// --- СИСТЕМА ЗАВАНТАЖЕННЯ ТЕКСТУР ---
 const textureLoader = new THREE.TextureLoader();
-const textures = { top: null, long: null, short: null };
+const textures = { top: null, long: null, short: null, chassis: null };
 
 function loadTex(url) {
     return textureLoader.load(url, 
@@ -282,10 +283,10 @@ function loadTex(url) {
     );
 }
 
-// Завантажуємо текстури
 if (TEXTURE_URLS.TOP) textures.top = loadTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
+if (TEXTURE_URLS.CHASSIS) textures.chassis = loadTex(TEXTURE_URLS.CHASSIS);
 
 // --- ФІЗИЧНІ ФІЛЬТРИ ---
 class LowPassFilter {
@@ -362,7 +363,8 @@ class AudioEngine {
     sfxHover() { this.playTone('triangle', 800, 0.05, 0.1); }
     sfxGrab() { this.playTone('sine', 200, 0.15, 0.3); this.playTone('square', 100, 0.1, 0.1); }
     sfxSnap() { this.playTone('square', 800, 0.1, 0.2); setTimeout(() => this.playTone('sine', 60, 0.3, 0.5), 50); }
-    sfxRotate() { this.playTone('sawtooth', 100, 0.1, 0.05); }
+    sfxDispense() { this.playTone('sawtooth', 400, 0.1, 0.2); this.playTone('sine', 800, 0.2, 0.2); }
+    sfxError() { this.playTone('sawtooth', 150, 0.3, 0.3); }
     sfxVictory() { [523.25, 659.25, 783.99, 1046.50].forEach((n, i) => setTimeout(() => this.playTone('square', n, 0.4, 0.3), i * 150)); }
 }
 const Audio = new AudioEngine();
@@ -379,7 +381,6 @@ class ModelFactory {
             case 'copper': return new THREE.MeshStandardMaterial({color: 0xb87333, metalness: 0.7, roughness: 0.2});
             case 'battery_body': return new THREE.MeshStandardMaterial({color: 0xffaa00, metalness: 0.3, roughness: 0.4});
             case 'rubber': return new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9, flatShading: true});
-            case 'green_cover': return new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 0.95});
             case 'screen': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.1, metalness: 0.8});
             case 'button_red': return new THREE.MeshStandardMaterial({color: 0xff3333});
             case 'sensor_body': return new THREE.MeshStandardMaterial({color: 0x0055ff, roughness: 0.5});
@@ -444,38 +445,20 @@ class ModelFactory {
                 break;
 
             case 'cover_green':
-                // *** НОВА ГЕОМЕТРІЯ (1.9 x 0.625 x 4.0) ***
                 const w = 1.9;  
                 const h = 0.625;
                 const d = 4.0;  
-
                 let materials;
-                
-                // Fallback матеріал (непрозорий)
                 const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
-                
                 if (textures.top) {
-                    // Якщо текстури є, створюємо мульти-матеріал
-                    // Примусово ставимо transparent: false
                     const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });
                     const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: false, opacity: 1.0 }) : fallbackMat; 
                     const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: false, opacity: 1.0 }) : fallbackMat;
                     const matBottom = fallbackMat;
-
-                    // Порядок матеріалів BoxGeometry:
-                    // 0: Right (x+), 1: Left (x-), 2: Top (y+), 3: Bottom (y-), 4: Front (z+), 5: Back (z-)
-                    materials = [
-                        matLong,  // Right
-                        matLong,  // Left
-                        matTop,   // Top
-                        matBottom,// Bottom
-                        matShort, // Front
-                        matShort  // Back
-                    ];
+                    materials = [matLong, matLong, matTop, matBottom, matShort, matShort];
                 } else {
                     materials = fallbackMat;
                 }
-
                 const cov = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
                 group.add(cov);
                 break;
@@ -523,7 +506,10 @@ class SceneGraph {
         this.floatingRoot.position.set(0, 0, -5);
         this.re.scene.add(this.floatingRoot);
 
-        // ДВА КУРСОРИ ДЛЯ ДВОХ РУК
+        this.dispenserRoot = new THREE.Group();
+        this.dispenserRoot.position.set(0, 0, -5); // У тій же площині, що й літаючі деталі
+        this.re.scene.add(this.dispenserRoot);
+
         this.cursors = [this.createCursor(), this.createCursor()];
         this.cursors.forEach(c => this.re.scene.add(c));
 
@@ -541,14 +527,30 @@ class SceneGraph {
     }
 
     initChassis() {
-        // Оновлена ширина шасі під нову кришку (1.9 замість 1.6)
-        const geo = new THREE.BoxGeometry(1.9, 0.1, 4.0);
-        const mat = new THREE.MeshPhongMaterial({color: CONFIG.THEME.CHASSIS_COLOR});
-        const chassis = new THREE.Mesh(geo, mat);
+        // Рама з текстурою (якщо є) або колір
+        const w = 1.9;
+        const h = 0.1;
+        const d = 4.0;
+        
+        let materials;
+        const fallbackMat = new THREE.MeshPhongMaterial({color: CONFIG.THEME.CHASSIS_COLOR});
+
+        if (textures.chassis) {
+            const matTop = new THREE.MeshStandardMaterial({ map: textures.chassis });
+            const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long }) : fallbackMat; 
+            const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short }) : fallbackMat;
+            const matBottom = fallbackMat;
+            
+            materials = [ matLong, matLong, matTop, matBottom, matShort, matShort ];
+        } else {
+            materials = fallbackMat;
+        }
+
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
         this.worldRoot.add(chassis);
         
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
-        const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.9, 12); // Трохи довші осі
+        const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.9, 12); 
         
         const fAxle = new THREE.Mesh(axGeo, axMat);
         fAxle.rotation.z = Math.PI/2; fAxle.position.set(0, 0, -1.2);
@@ -563,43 +565,80 @@ class SceneGraph {
         [-1.0, 0.0, 1.0].forEach(z => {
             const m = new THREE.Mesh(stub, axMat);
             m.rotation.z = Math.PI/2;
-            m.position.set(-1.05, 0, z); // Зміщено для ширини 1.9
+            m.position.set(-1.05, 0, z);
             this.worldRoot.add(m);
         });
 
         [-1.2, -0.4, 0.4, 1.2].forEach(z => {
             const m = new THREE.Mesh(stub, axMat);
             m.rotation.z = Math.PI/2;
-            m.position.set(1.05, 0, z); // Зміщено для ширини 1.9
+            m.position.set(1.05, 0, z);
             this.worldRoot.add(m);
         });
     }
 
     updateCursorState(index, pos, mode) {
         if (index >= this.cursors.length) return;
-        
         const cursor = this.cursors[index];
         cursor.visible = true;
         cursor.position.copy(pos);
-        
         let col = CONFIG.THEME.CURSOR_OPEN;
         let scale = 1.2;
-
-        if (mode === 1) { // Grab
-            col = CONFIG.THEME.CURSOR_CLOSED;
-            scale = 0.8;
-        } else if (mode === 2) { // Rotate
-            col = CONFIG.THEME.CURSOR_ROTATE;
-            scale = 1.5;
-        }
-
+        if (mode === 1) { col = CONFIG.THEME.CURSOR_CLOSED; scale = 0.8; }
+        else if (mode === 2) { col = CONFIG.THEME.CURSOR_ROTATE; scale = 1.5; }
         cursor.userData.dot.material.color.setHex(col);
         cursor.userData.ring.material.color.setHex(col);
         cursor.userData.ring.scale.setScalar(scale);
     }
 
-    hideCursors() {
-        this.cursors.forEach(c => c.visible = false);
+    hideCursors() { this.cursors.forEach(c => c.visible = false); }
+
+    // Створення візуалу диспенсера
+    createDispenser(type, pos) {
+        const group = new THREE.Group();
+        group.position.copy(pos);
+
+        // Основа
+        const base = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 0.1, 1.2),
+            new THREE.MeshStandardMaterial({color: CONFIG.THEME.DISPENSER_BASE, metalness: 0.5})
+        );
+        group.add(base);
+
+        // Текст/Іконка (спрощено - просто модель деталі, що обертається)
+        const preview = ModelFactory.createPart(type);
+        preview.scale.setScalar(0.7);
+        preview.position.set(0, 0.5, 0);
+        
+        // Зробимо прев'ю трохи прозорим або голографічним
+        preview.traverse(c => {
+            if(c.isMesh) {
+                c.material = c.material.clone();
+                c.material.transparent = true;
+                c.material.opacity = 0.8;
+                c.material.emissive = new THREE.Color(0x004488);
+                c.material.emissiveIntensity = 0.2;
+            }
+        });
+        
+        group.add(preview);
+
+        // Хітбокс для взаємодії
+        const hitbox = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 1.5, 1.5),
+            new THREE.MeshBasicMaterial({visible: false})
+        );
+        group.add(hitbox);
+
+        group.userData = { 
+            isDispenser: true, 
+            type: type, 
+            previewMesh: preview,
+            baseMesh: base 
+        };
+        
+        this.dispenserRoot.add(group);
+        return group;
     }
 }
 
@@ -610,32 +649,36 @@ class GameLogic {
         this.snaps = [];
         this.installedCount = 0;
         this.totalParts = 0;
+        
+        // Лічильники для диспенсерів
+        this.counts = {
+            wheel: { current: 0, max: 0 },
+            gear: { current: 0, max: 0 }
+        };
+
+        this.dispensers = [];
         this.initLevel();
     }
 
     initLevel() {
-        // Колеса розсунуті ширше (X +/- 1.5 замість 1.35)
         this.createSnap('wheel', new THREE.Vector3(-1.5, 0, -1.2), 'SIDE');
         this.createSnap('wheel', new THREE.Vector3(1.5, 0, -1.2), 'SIDE');
         this.createSnap('wheel', new THREE.Vector3(-1.5, 0, 1.2), 'SIDE');
         this.createSnap('wheel', new THREE.Vector3(1.5, 0, 1.2), 'SIDE');
 
-        // Шестерні розсунуті ширше (X +/- 1.25 замість 1.1)
         [-1.0, 0.0, 1.0].forEach(z => this.createSnap('gear', new THREE.Vector3(-1.25, 0, z), 'SIDE'));
         [-1.2, -0.4, 0.4, 1.2].forEach(z => this.createSnap('gear', new THREE.Vector3(1.25, 0, z), 'SIDE'));
 
         this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0), 'TOP');
         this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
         this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
-        
         this.createSnap('cover_green', new THREE.Vector3(0, 0.20, 0), 'TOP');
-        
         this.createSnap('motor', new THREE.Vector3(0, 0.35, 1.2), 'TOP');
         this.createSnap('motor', new THREE.Vector3(0, 0.35, -0.5), 'TOP');
-
         this.createSnap('sensor', new THREE.Vector3(0, 0.52, 1.8), 'TOP');
 
         this.spawnLooseParts();
+        this.setupDispensers();
     }
 
     createSnap(type, pos, face) {
@@ -670,30 +713,62 @@ class GameLogic {
         this.sg.worldRoot.add(snap);
         this.snaps.push(snap);
         this.totalParts++;
+
+        // Оновлюємо ліміти для диспенсерів
+        if (this.counts[type]) {
+            this.counts[type].max++;
+        }
     }
 
     spawnLooseParts() {
         this.snaps.forEach((snap, index) => {
             const type = snap.userData.type;
-            const part = ModelFactory.createPart(type);
             
-            part.position.set(0, 5, 0);
-            
-            if (type === 'cover_green') {
-                part.scale.y = 0.2; 
-            }
+            // ПРОПУСКАЄМО КОЛЕСА ТА ШЕСТЕРНІ - вони будуть в диспенсерах
+            if (type === 'wheel' || type === 'gear') return;
 
+            const part = ModelFactory.createPart(type);
+            part.position.set(0, 5, 0);
+            if (type === 'cover_green') part.scale.y = 0.2; 
             part.userData.type = type;
             part.userData.isInstalled = false;
             part.userData.inInventory = true; 
             part.userData.basePos = new THREE.Vector3();
-            
             this.sg.floatingRoot.add(part);
             this.parts.push(part);
         });
         
         this.rearrangeParts();
         this.updateCounter();
+    }
+
+    setupDispensers() {
+        // Додаємо диспенсери у сцену
+        // Wheel Dispenser (Ліворуч)
+        this.dispensers.push(this.sg.createDispenser('wheel', new THREE.Vector3(-2.2, 2.0, -1.0)));
+        // Gear Dispenser (Праворуч)
+        this.dispensers.push(this.sg.createDispenser('gear', new THREE.Vector3(2.2, 2.0, -1.0)));
+    }
+
+    tryDispense(type) {
+        if (!this.counts[type]) return null;
+        if (this.counts[type].current >= this.counts[type].max) {
+            Audio.sfxError();
+            return null; // Ліміт вичерпано
+        }
+
+        const part = ModelFactory.createPart(type);
+        part.userData.type = type;
+        part.userData.isInstalled = false;
+        part.userData.inInventory = false; // Одразу не в інвентарі, а в руці
+        
+        this.sg.floatingRoot.add(part);
+        this.parts.push(part);
+        
+        this.counts[type].current++;
+        Audio.sfxDispense();
+        
+        return part;
     }
 
     updateCounter() {
@@ -704,24 +779,17 @@ class GameLogic {
     checkSnap(part, partPos) {
         let bestSnap = null;
         let limit = 1.5; 
-
         if (part.userData.type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return null; 
         }
-
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
             if (snap.userData.type !== part.userData.type) continue;
-            
             const snapWorldPos = new THREE.Vector3();
             snap.getWorldPosition(snapWorldPos);
             const dist = partPos.distanceTo(snapWorldPos);
-            
-            if (dist < limit) { 
-                limit = dist; 
-                bestSnap = snap; 
-            }
+            if (dist < limit) { limit = dist; bestSnap = snap; }
         }
         return bestSnap;
     }
@@ -731,17 +799,11 @@ class GameLogic {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return;
         }
-
         this.snaps.forEach(snap => {
             if (snap.userData.type === type && !snap.userData.occupied) {
                 const mat = snap.userData.mesh.material;
-                if (isActive) {
-                    mat.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT);
-                    mat.opacity = 0.8;
-                } else {
-                    mat.color.setHex(CONFIG.THEME.GHOST_VALID);
-                    mat.opacity = 0.3;
-                }
+                if (isActive) { mat.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); mat.opacity = 0.8; } 
+                else { mat.color.setHex(CONFIG.THEME.GHOST_VALID); mat.opacity = 0.3; }
             }
         });
     }
@@ -749,14 +811,15 @@ class GameLogic {
     rearrangeParts() {
         const activeParts = this.parts.filter(p => p.userData.inInventory);
         const count = activeParts.length;
-        const cols = 4;
-        const spacingX = 0.9;
+        const cols = 2; // Менше стовпців, бо менше деталей
+        const spacingX = 1.0;
         const spacingY = 0.8;
         
         activeParts.forEach((part, index) => {
             const col = index % cols;
             const row = Math.floor(index / cols);
-            const x = (col - (Math.min(count, cols) - 1) / 2) * spacingX;
+            // Центруємо грід
+            const x = (col - 0.5) * spacingX;
             const y = 1.5 + (row * spacingY);
             const z = 1.0 + (row * 0.1); 
             if (part.userData.basePos) {
@@ -765,44 +828,32 @@ class GameLogic {
         });
     }
 
-    // --- ГОЛОВНА ФУНКЦІЯ ІНСТАЛЯЦІЇ (ВИПРАВЛЕНО) ---
     installPart(part, snap, handIndex) {
         this.sg.floatingRoot.remove(part);
         this.sg.worldRoot.add(part);
-        
         part.position.copy(snap.position);
         
-        if (['wheel', 'gear', 'motor', 'sensor'].includes(part.userData.type)) {
-            part.rotation.set(0, 0, 0); 
-        } else {
-            part.rotation.copy(snap.rotation);
-        }
+        if (['wheel', 'gear', 'motor', 'sensor'].includes(part.userData.type)) part.rotation.set(0, 0, 0); 
+        else part.rotation.copy(snap.rotation);
 
-        if (part.userData.type === 'cover_green') {
-            part.scale.y = 1.0;
-        }
+        if (part.userData.type === 'cover_green') part.scale.y = 1.0;
 
-        // --- ВИПРАВЛЕННЯ ПРОЗОРОСТІ ДЛЯ ВСІХ ДЕТАЛЕЙ ---
-        // Використовуємо traverse, щоб знайти всі Mesh всередині групи
         part.traverse((child) => {
             if (child.isMesh) {
-                // Перевіряємо, чи матеріал є масивом (мульти-матеріал) чи одним об'єктом
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
-                
                 materials.forEach(mat => {
                     mat.transparent = false;
                     mat.opacity = 1.0;
-                    mat.depthWrite = true; // Важливо для коректного перекриття
+                    mat.depthWrite = true;
                     mat.needsUpdate = true;
                 });
             }
         });
         
         part.userData.isInstalled = true;
-        part.userData.grabbedBy = -1; // Release
+        part.userData.grabbedBy = -1; 
         snap.userData.occupied = true;
         snap.visible = false;
-        
         this.installedCount++;
         this.updateCounter();
         Audio.sfxSnap();
@@ -814,22 +865,19 @@ class GameLogic {
     }
 }
 
-// --- СИСТЕМА ВВОДУ (2 РУКИ) ---
+// --- СИСТЕМА ВВОДУ ---
 class InputSystem {
     constructor(game, sceneGraph) {
         this.game = game;
         this.sg = sceneGraph;
         this.raycaster = new THREE.Raycaster();
-        
         this.states = [
             { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() },
             { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() }
         ];
-        
         this.filters = [new Vector3Filter(), new Vector3Filter()];
     }
 
-    // Heuristic: Перевірка на прямі пальці
     isStraight(wrist, tip, lowerJoint) {
         const dTip = Math.sqrt(Math.pow(wrist.x - tip.x, 2) + Math.pow(wrist.y - tip.y, 2));
         const dLower = Math.sqrt(Math.pow(wrist.x - lowerJoint.x, 2) + Math.pow(wrist.y - lowerJoint.y, 2));
@@ -838,10 +886,13 @@ class InputSystem {
 
     update(results, camera) {
         const now = performance.now() / 1000;
-        
         this.sg.hideCursors();
-
         if (!results.multiHandLandmarks) return;
+
+        // Анімація диспенсерів (обертання прев'ю)
+        this.game.dispensers.forEach(d => {
+            if(d.userData.previewMesh) d.userData.previewMesh.rotation.y += 0.02;
+        });
 
         results.multiHandLandmarks.forEach((landmarks, index) => {
             if (index >= 2) return; 
@@ -876,40 +927,24 @@ class InputSystem {
         const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
         
         const pinchT = CONFIG.INPUT.PINCH_THRESHOLD_START;
-        
         let newMode = 0; 
 
-        // ЖЕСТ ОБЕРТАННЯ: 3 пальці прямо + відстань між ними велика (Трикутник)
-        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) {
-            newMode = 2; 
-        }
-        // ЖЕСТ ЗАХОПЛЕННЯ: Щіпок
-        else if (dThumbIndex < pinchT) {
-            newMode = 1; 
-        }
+        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) newMode = 2; 
+        else if (dThumbIndex < pinchT) newMode = 1; 
 
         this.sg.updateCursorState(index, pos, newMode);
 
         if (newMode === 2) {
-            if (state.mode !== 2) {
-                state.lastRotPos.copy(pos);
-                Audio.sfxHover();
-            } else {
-                this.handleRotation(state, pos);
-            }
+            if (state.mode !== 2) { state.lastRotPos.copy(pos); Audio.sfxHover(); } 
+            else this.handleRotation(state, pos);
             if (state.grabbedObject) this.onGrabEnd(state);
         } 
         else if (newMode === 1) {
-            if (state.mode !== 1) {
-                this.onGrabStart(state, pos, camera, index);
-            } else if (state.grabbedObject) {
-                this.handleDrag(state, pos);
-            }
+            if (state.mode !== 1) this.onGrabStart(state, pos, camera, index);
+            else if (state.grabbedObject) this.handleDrag(state, pos);
         } 
         else {
-            if (state.mode === 1 && state.grabbedObject) {
-                this.onGrabEnd(state);
-            }
+            if (state.mode === 1 && state.grabbedObject) this.onGrabEnd(state);
         }
 
         state.mode = newMode;
@@ -920,6 +955,26 @@ class InputSystem {
         const screen = pos.clone().project(camera);
         this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
         
+        // 1. Перевірка на Диспенсери (Generators)
+        const dispenserHits = this.raycaster.intersectObjects(this.sg.dispenserRoot.children, true);
+        if (dispenserHits.length > 0) {
+            let dObj = dispenserHits[0].object;
+            while(dObj.parent && dObj.parent !== this.sg.dispenserRoot) dObj = dObj.parent;
+            
+            if (dObj.userData.isDispenser) {
+                const newPart = this.game.tryDispense(dObj.userData.type);
+                if (newPart) {
+                    newPart.position.copy(dObj.position); // Поява на диспенсері
+                    newPart.position.z += 0.5; // Трохи ближче до камери
+                    state.grabbedObject = newPart;
+                    newPart.userData.grabbedBy = handIndex;
+                    this.game.setHighlight(newPart.userData.type, true);
+                    return; // Успішно взяли нову деталь
+                }
+            }
+        }
+
+        // 2. Перевірка на Звичайні деталі
         const partHits = this.raycaster.intersectObjects(this.sg.floatingRoot.children, true);
         let target = null;
         if(partHits.length > 0) target = partHits[0].object;
@@ -937,14 +992,11 @@ class InputSystem {
             let obj = target;
             while(obj.parent && obj.parent !== this.sg.floatingRoot) obj = obj.parent;
             
-            if (obj.userData.grabbedBy !== -1 && obj.userData.grabbedBy !== undefined && obj.userData.grabbedBy !== handIndex) {
-                return; // Вже тримає інша рука
-            }
+            if (obj.userData.grabbedBy !== -1 && obj.userData.grabbedBy !== undefined && obj.userData.grabbedBy !== handIndex) return;
 
             if (obj.userData.type && !obj.userData.isInstalled) {
                 state.grabbedObject = obj;
                 obj.userData.grabbedBy = handIndex; 
-                
                 Audio.sfxGrab();
                 this.game.setHighlight(obj.userData.type, true);
                 
@@ -965,9 +1017,11 @@ class InputSystem {
             if (state.potentialSnap) {
                 this.game.installPart(state.grabbedObject, state.potentialSnap, state.grabbedObject.userData.grabbedBy);
             } else {
-                state.grabbedObject.userData.grabbedBy = -1; // Відпустити
+                state.grabbedObject.userData.grabbedBy = -1; 
+                
+                // Якщо кинули деталь, яку взяли з диспенсера, вона просто падає/залишається
+                // Можна було б видаляти, якщо кинули далеко, але поки хай залишається
             }
-            
             state.grabbedObject = null;
             state.potentialSnap = null;
         }
@@ -976,10 +1030,8 @@ class InputSystem {
     handleRotation(state, pos) {
         const dx = (pos.x - state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
         const dy = (pos.y - state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
-        
         this.sg.worldRoot.rotation.y += dx;
         this.sg.worldRoot.rotation.x += dy;
-        
         state.lastRotPos.copy(pos);
     }
 
@@ -1012,45 +1064,29 @@ class Application {
         hands.onResults((results) => {
             this.input.update(results, this.camera);
         });
-        
         const videoElement = document.getElementById('video-background');
         const cam = new Camera(videoElement, {
             onFrame: async () => await hands.send({image: videoElement}),
             width: 1280, height: 720
         });
-
-        try {
-            await cam.start(); 
-        } catch (e) {
-            console.error("Camera Error:", e);
-            alert("Помилка: Камера зайнята.");
-        }
-        
+        try { await cam.start(); } catch (e) { console.error(e); alert("Камера зайнята."); }
         this.loop();
     }
 
     loop() {
         requestAnimationFrame(() => this.loop());
         const t = Date.now() * 0.001;
-        
         this.game.parts.forEach((c, i) => {
             if (c.userData.inInventory && c.userData.basePos) {
                 const bobOffset = Math.sin(t * CONFIG.PHYSICS.BOB_SPEED + i) * CONFIG.PHYSICS.BOB_HEIGHT;
-                const targetX = c.userData.basePos.x;
-                const targetY = c.userData.basePos.y + bobOffset;
-                const targetZ = c.userData.basePos.z;
-                
-                c.position.x += (targetX - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                c.position.y += (targetY - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                c.position.z += (targetZ - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                
+                c.position.x += (c.userData.basePos.x - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                c.position.y += (c.userData.basePos.y + bobOffset - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                c.position.z += (c.userData.basePos.z - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
                 c.rotation.z += 0.002;
             } else if (!c.userData.isInstalled && c.userData.grabbedBy === -1) {
-                c.rotation.z += 0.002;
-                c.rotation.y += 0.001;
+                c.rotation.z += 0.002; c.rotation.y += 0.001;
             }
         });
-        
         this.render();
     }
 }
