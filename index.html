@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.6 [TRANSPARENT COVER]</title>
+    <title>TNTU ENGINEERING SUITE v10.7 [FIXED COVER TRANSPARENCY]</title>
     
     <style>
         :root {
@@ -218,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.6 [TRANSPARENT COVER]
+ * TNTU ENGINEERING SUITE v10.7 [FIXED COVER TRANSPARENCY]
  * ============================================================================
  */
 
@@ -501,11 +501,11 @@ class ModelFactory {
                 const stepH = 0.25; 
                 
                 let materials;
-                // --- ВИПРАВЛЕНО: transparent: true, opacity: 1.0 (для роботи альфа-каналу фото) ---
+                // --- ПРОЗОРІСТЬ УВІМКНЕНО: transparent: true, opacity: 1.0 (для роботи альфа-каналу фото) ---
                 const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 1.0});
                 
                 if (textures.top) {
-                    // ТЕПЕР ФОТО БУДЕ ПРОЗОРИМ, ЯКЩО ВОНО PNG
+                    // ТЕПЕР ФОТО БУДЕ ПРОЗОРИМ, ЯКЩО ВОНО PNG (alphaTest допомагає з сортуванням)
                     const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: true, opacity: 1.0, alphaTest: 0.1 });
                     const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: true, opacity: 1.0 }) : fallbackMat; 
                     const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: true, opacity: 1.0 }) : fallbackMat;
@@ -925,8 +925,15 @@ class GameLogic {
             if (child.isMesh) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 materials.forEach(mat => {
-                    mat.transparent = false;
-                    mat.opacity = 1.0;
+                    // --- ВИПРАВЛЕНО: ЗБЕРІГАЄМО ПРОЗОРІСТЬ ДЛЯ КРИШКИ ---
+                    if (part.userData.type === 'cover_green') {
+                        mat.transparent = true; 
+                        mat.opacity = 1.0;
+                        mat.alphaTest = 0.1; // Допомагає з сортуванням
+                    } else {
+                        mat.transparent = false;
+                        mat.opacity = 1.0;
+                    }
                     mat.depthWrite = true;
                     mat.needsUpdate = true;
                 });
