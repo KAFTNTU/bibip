@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.1 [FIXED GEAR ROTATION]</title>
+    <title>TNTU ENGINEERING SUITE v10.2 [TEXTURED CHASSIS]</title>
     
     <style>
         :root {
@@ -218,16 +218,16 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.1 [FIXED GEAR ROTATION]
+ * TNTU ENGINEERING SUITE v10.2 [TEXTURED CHASSIS]
  * ============================================================================
  */
 
 // ▼▼▼ ШЛЯХИ ДО ТЕКСТУР ▼▼▼
 const TEXTURE_URLS = {
-    TOP: 'photo/top.jpg',          // Верхнє фото
+    TOP: 'photo/top.jpg',          // Верхнє фото (кришка)
     SIDE_LONG: 'photo/side_long.jpg',   // Довгий бік
     SIDE_SHORT: 'photo/side_short.jpg', // Короткий бік
-    CHASSIS: 'photo/top.jpg' // Текстура для рами
+    CHASSIS: 'photo/chassis.jpg' // НОВЕ: Текстура для рами
 };
 
 const CONFIG = {
@@ -291,7 +291,7 @@ function loadTex(url) {
 if (TEXTURE_URLS.TOP) textures.top = loadTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
-if (TEXTURE_URLS.CHASSIS) textures.chassis = loadTex(TEXTURE_URLS.CHASSIS);
+if (TEXTURE_URLS.CHASSIS) textures.chassis = loadTex(TEXTURE_URLS.CHASSIS); // Завантаження текстури рами
 
 // --- ФІЗИЧНІ ФІЛЬТРИ ---
 class LowPassFilter {
@@ -586,14 +586,17 @@ class SceneGraph {
         });
 
         if (textures.chassis) {
+            // Використовуємо текстуру рами для верху
+            const matTop = new THREE.MeshStandardMaterial({ map: textures.chassis });
+            // Для боків можна використовувати текстури боків або fallback
             const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long }) : fallbackMat; 
             const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short }) : fallbackMat;
-            const matBottom = fallbackMat;
+            const matBottom = fallbackMat; // Знизу можна просто колір
             
             materials = [ 
                 matLong,      // Right
                 matLong,      // Left
-                internalMat,  // TOP 
+                matTop,       // TOP (ТЕКСТУРА РАМИ)
                 matBottom,    // Bottom
                 matShort,     // Front
                 matShort      // Back
