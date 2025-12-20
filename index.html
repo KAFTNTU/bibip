@@ -529,11 +529,34 @@ class ModelFactory {
                 const stepH = 0.25; 
                 
                 let materials;
-                const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 1.0});
+               const fallbackMat = new THREE.MeshStandardMaterial({
+    color: 0x39ff14,
+    roughness: 0.4,
+    transparent: false,
+    opacity: 1.0,
+    side: THREE.DoubleSide,
+    depthWrite: true,
+    depthTest: true
+});
+
                 
                 if (textures.top) {
-                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: true, opacity: 1.0, alphaTest: 0.1 });
-                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: true, opacity: 1.0 }) : fallbackMat; 
+                   const matTop = new THREE.MeshStandardMaterial({
+    map: textures.top,
+    transparent: false,
+    opacity: 1.0,
+    side: THREE.DoubleSide,
+    depthWrite: true,
+    depthTest: true
+});
+
+                    const matLong = textures.long ? new THREE.MeshStandardMaterial({
+    map: textures.long,
+    transparent: false,
+    side: THREE.DoubleSide,
+    depthWrite: true,
+    depthTest: true
+})
                     const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: true, opacity: 1.0 }) : fallbackMat;
                     const matBottom = fallbackMat;
 
@@ -1031,10 +1054,13 @@ class GameLogic {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 materials.forEach(mat => {
                     // --- ВИПРАВЛЕНО: ЗБЕРІГАЄМО ПРОЗОРІСТЬ ДЛЯ КРИШКИ ---
-                    if (part.userData.type === 'cover_green') {
-                        mat.transparent = true; 
-                        mat.opacity = 1.0;
-                        mat.alphaTest = 0.1; // Допомагає з сортуванням
+                   if (part.userData.type === 'cover_green') {
+    mat.transparent = false;
+    mat.opacity = 1.0;
+    mat.side = THREE.DoubleSide;
+    mat.depthWrite = true;
+    mat.depthTest = true;
+}
                     } else {
                         mat.transparent = false;
                         mat.opacity = 1.0;
