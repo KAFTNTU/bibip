@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.5 [RAISED COVER]</title>
+    <title>TNTU ENGINEERING SUITE v10.6 [TRANSPARENT COVER]</title>
     
     <style>
         :root {
@@ -218,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.5 [RAISED COVER]
+ * TNTU ENGINEERING SUITE v10.6 [TRANSPARENT COVER]
  * ============================================================================
  */
 
@@ -496,19 +496,19 @@ class ModelFactory {
                 const d = 4.0;  
                 
                 // --- НИЖНЯ ЧАСТИНА (СХОДИНКА) ---
-                // Менша на 25%, висота 0.25 (висота колеса)
                 const stepW = w * 0.75; 
                 const stepD = d * 0.75;
                 const stepH = 0.25; 
                 
                 let materials;
-                // Fallback матеріал (непрозорий)
-                const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
+                // --- ВИПРАВЛЕНО: transparent: true, opacity: 1.0 (для роботи альфа-каналу фото) ---
+                const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: true, opacity: 1.0});
                 
                 if (textures.top) {
-                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });
-                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: false, opacity: 1.0 }) : fallbackMat; 
-                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: false, opacity: 1.0 }) : fallbackMat;
+                    // ТЕПЕР ФОТО БУДЕ ПРОЗОРИМ, ЯКЩО ВОНО PNG
+                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: true, opacity: 1.0, alphaTest: 0.1 });
+                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: true, opacity: 1.0 }) : fallbackMat; 
+                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: true, opacity: 1.0 }) : fallbackMat;
                     const matBottom = fallbackMat;
 
                     materials = [matLong, matLong, matTop, matBottom, matShort, matShort];
@@ -521,18 +521,13 @@ class ModelFactory {
                 // Зсуваємо її вгору, щоб вона стояла НА сходинці
                 topCover.position.y = stepH / 2; 
 
-                // Нижня частина (сходинка) - просто зелена або сіра
+                // Нижня частина (сходинка)
                 const stepMat = new THREE.MeshStandardMaterial({color: 0x228822, roughness: 0.8});
                 const stepCover = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD), stepMat);
-                // Зсуваємо її вниз відносно центру групи, але вона все одно вище 0
                 stepCover.position.y = -(h / 2); 
 
-                // Об'єднуємо
                 group.add(stepCover);
                 group.add(topCover);
-                
-                // Коригуємо загальну позицію групи, щоб "дно" сходинки було на рівні установки
-                // Центр групи зараз між двома частинами. 
                 break;
                 
             case 'motor':
