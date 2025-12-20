@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.19 [FINAL MERGE]</title>
+    <title>TNTU ENGINEERING SUITE v10.20 [FIXED]</title>
     
     <style>
         :root {
@@ -218,11 +218,11 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.19 [FINAL MERGE]
- * - 3D Frame (Gray, Holes, Central Beam)
- * - Stepped Cover (Two-level, Transparent, Raised)
- * - Smart Red Highlight (Only nearest snap visible)
- * - Adjusted Motors (Lowered to touch frame)
+ * TNTU ENGINEERING SUITE v10.20 [FIXED VERSION]
+ * - Fixed critical ternary operator syntax error in cover_green
+ * - Fixed matShort transparency settings
+ * - Fixed installPart loop syntax
+ * - Removed redundant alphaTest
  * ============================================================================
  */
 
@@ -529,35 +529,53 @@ class ModelFactory {
                 const stepH = 0.25; 
                 
                 let materials;
-               const fallbackMat = new THREE.MeshStandardMaterial({
-    color: 0x39ff14,
-    roughness: 0.4,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide,
-    depthWrite: true,
-    depthTest: true
-});
-
                 
-                if (textures.top) {
-                   const matTop = new THREE.MeshStandardMaterial({
-    map: textures.top,
-    transparent: false,
-    opacity: 1.0,
-    side: THREE.DoubleSide,
-    depthWrite: true,
-    depthTest: true
-});
+                const fallbackMat = new THREE.MeshStandardMaterial({
+                    color: 0x39ff14,
+                    roughness: 0.4,
+                    transparent: false,
+                    opacity: 1.0,
+                    side: THREE.DoubleSide,
+                    depthWrite: true,
+                    depthTest: true
+                });
 
-                    const matLong = textures.long ? new THREE.MeshStandardMaterial({
-    map: textures.long,
-    transparent: false,
-    side: THREE.DoubleSide,
-    depthWrite: true,
-    depthTest: true
-})
-                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: true, opacity: 1.0 }) : fallbackMat;
+                if (textures.top) {
+                    const matTop = new THREE.MeshStandardMaterial({
+                        map: textures.top,
+                        transparent: false,
+                        opacity: 1.0,
+                        side: THREE.DoubleSide,
+                        depthWrite: true,
+                        depthTest: true
+                    });
+
+                    // -----------------------------------------------------------
+                    // FIX #1: Added ternary fallback (: fallbackMat)
+                    // -----------------------------------------------------------
+                    const matLong = textures.long 
+                        ? new THREE.MeshStandardMaterial({
+                            map: textures.long,
+                            transparent: false,
+                            side: THREE.DoubleSide,
+                            depthWrite: true,
+                            depthTest: true
+                        }) 
+                        : fallbackMat;
+
+                    // -----------------------------------------------------------
+                    // FIX #2: Fixed matShort transparency and closing braces
+                    // -----------------------------------------------------------
+                    const matShort = textures.short 
+                        ? new THREE.MeshStandardMaterial({
+                            map: textures.short,
+                            transparent: false,
+                            side: THREE.DoubleSide,
+                            depthWrite: true,
+                            depthTest: true
+                        })
+                        : fallbackMat;
+                    
                     const matBottom = fallbackMat;
 
                     materials = [matLong, matLong, matTop, matBottom, matShort, matShort];
@@ -1053,19 +1071,21 @@ class GameLogic {
             if (child.isMesh) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 materials.forEach(mat => {
-                    // --- ВИПРАВЛЕНО: ЗБЕРІГАЄМО ПРОЗОРІСТЬ ДЛЯ КРИШКИ ---
-                   if (part.userData.type === 'cover_green') {
-    mat.transparent = false;
-    mat.opacity = 1.0;
-    mat.side = THREE.DoubleSide;
-    mat.depthWrite = true;
-    mat.depthTest = true;
-}
+                    // -----------------------------------------------------------------
+                    // FIX #3: FIXED SYNTAX ERROR (removed extra brace) & LOGIC
+                    // -----------------------------------------------------------------
+                    if (part.userData.type === 'cover_green') {
+                        mat.transparent = false;
+                        mat.opacity = 1.0;
+                        mat.side = THREE.DoubleSide;
+                        mat.depthWrite = true;
+                        mat.depthTest = true;
                     } else {
                         mat.transparent = false;
                         mat.opacity = 1.0;
+                        mat.depthWrite = true;
                     }
-                    mat.depthWrite = true;
+                    // FIX #4: No alphaTest here
                     mat.needsUpdate = true;
                 });
             }
