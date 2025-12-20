@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.19 [FINAL MERGE + COVER FIX]</title>
+    <title>TNTU ENGINEERING SUITE v10.5 [RAISED COVER]</title>
     
     <style>
         :root {
@@ -218,7 +218,7 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.19 [FINAL MERGE + COVER FIX]
+ * TNTU ENGINEERING SUITE v10.5 [RAISED COVER]
  * ============================================================================
  */
 
@@ -227,12 +227,13 @@ const TEXTURE_URLS = {
     TOP: 'photo/top.jpg',          // Верхнє фото (кришка)
     SIDE_LONG: 'photo/side_long.jpg',   // Довгий бік
     SIDE_SHORT: 'photo/side_short.jpg', // Короткий бік
+    CHASSIS: 'photo/chassis.png' // Текстура для дна/верху рами
 };
 
 const CONFIG = {
     RENDER: {
         FOV: 60,
-        NEAR_CLIP: 0.01, 
+        NEAR_CLIP: 0.1,
         FAR_CLIP: 1000,
         SHADOW_MAP_SIZE: 2048
     },
@@ -244,7 +245,7 @@ const CONFIG = {
         BOB_SPEED: 2.0, 
         BOB_HEIGHT: 0.1, 
         REARRANGE_SPEED: 0.08,
-        DISPENSER_COOLDOWN: 5000 
+        DISPENSER_COOLDOWN: 5000 // 5 секунд кулдаун
     },
     INPUT: {
         PINCH_THRESHOLD_START: 0.04,
@@ -257,12 +258,12 @@ const CONFIG = {
     },
     THEME: {
         PRIMARY: 0x00ffcc,
-        CHASSIS_COLOR: 0x333333, // Темно-сірий колір рами
+        CHASSIS_COLOR: 0x228822,
         INTERNAL_GREEN: 0x116611,
-        CHASSIS_EDGE_GRAY: 0x888888, 
+        CHASSIS_EDGE_GRAY: 0x888888, // Колір країв рами
         
         GHOST_VALID: 0x00ff00,     
-        GHOST_HIGHLIGHT: 0xff0000, // Червона підсвітка
+        GHOST_HIGHLIGHT: 0xff0000, 
         
         GHOST_INVALID: 0xff0000,
         CURSOR_OPEN: 0xff0000, 
@@ -288,37 +289,10 @@ function loadTex(url) {
     );
 }
 
-function loadChromaTex(url) {
-    const tex = new THREE.Texture();
-    const loader = new THREE.ImageLoader();
-    loader.load(url, (image) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imgData.data;
-        const threshold = 40; 
-        for (let i = 0; i < data.length; i += 4) {
-            const r = data[i]; const g = data[i + 1]; const b = data[i + 2];
-            if (r < threshold && g < threshold && b < threshold) {
-                data[i] = 57; data[i + 1] = 255; data[i + 2] = 20;
-            }
-        }
-        ctx.putImageData(imgData, 0, 0);
-        tex.image = canvas;
-        tex.encoding = THREE.sRGBEncoding; 
-        tex.anisotropy = 16;
-        tex.needsUpdate = true;
-    }, undefined, (err) => { console.warn('Texture error', url); });
-    return tex;
-}
-
-if (TEXTURE_URLS.TOP) textures.top = loadChromaTex(TEXTURE_URLS.TOP);
+if (TEXTURE_URLS.TOP) textures.top = loadTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
-if (TEXTURE_URLS.CHASSIS) textures.chassis = loadChromaTex(TEXTURE_URLS.CHASSIS);
+if (TEXTURE_URLS.CHASSIS) textures.chassis = loadTex(TEXTURE_URLS.CHASSIS);
 
 // --- ФІЗИЧНІ ФІЛЬТРИ ---
 class LowPassFilter {
@@ -430,6 +404,7 @@ class ModelFactory {
 
         switch(type) {
             case 'gear':
+                // *** ДЕТАЛІЗОВАНА ШЕСТЕРНЯ ***
                 const numTeeth = 16;
                 const radius = 0.48;
                 const innerRad = 0.40;
@@ -515,57 +490,53 @@ class ModelFactory {
                 break;
 
             case 'cover_green':
-                // *** ДВОРІВНЕВА КРИШКА (v10.5) ***
+                // *** НОВА ДВОРІВНЕВА КРИШКА ***
                 const w = 1.9;  
                 const h = 0.625;
                 const d = 4.0;  
                 
+                // --- НИЖНЯ ЧАСТИНА (СХОДИНКА) ---
+                // Менша на 25%, висота 0.25 (висота колеса)
                 const stepW = w * 0.75; 
                 const stepD = d * 0.75;
                 const stepH = 0.25; 
                 
-                // --- ВИПРАВЛЕННЯ: ПАРАМЕТРИ МАТЕРІАЛУ ДЛЯ ГАРАНТОВАНОЇ ВИДИМОСТІ ---
-                const coverMaterialProps = {
-                    side: THREE.DoubleSide, // Видно з обох боків (щоб не зникала ззаду)
-                    transparent: true,
-                    opacity: 1.0,
-                    alphaTest: 0.1, // Чіткі краї прозорості
-                    depthWrite: true // Примусовий запис у буфер глибини (вирішує зникнення)
-                };
-
                 let materials;
-                const fallbackMat = new THREE.MeshStandardMaterial({
-                    color: 0x39ff14, roughness: 0.2, ...coverMaterialProps
-                });
+                // Fallback матеріал (непрозорий)
+                const fallbackMat = new THREE.MeshStandardMaterial({color: 0x39ff14, roughness: 0.2, transparent: false, opacity: 1.0});
                 
                 if (textures.top) {
-                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, ...coverMaterialProps });
-                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, ...coverMaterialProps }) : fallbackMat; 
-                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, ...coverMaterialProps }) : fallbackMat;
-                    materials = [matLong, matLong, matTop, fallbackMat, matShort, matShort];
+                    const matTop = new THREE.MeshStandardMaterial({ map: textures.top, transparent: false, opacity: 1.0 });
+                    const matLong = textures.long ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: false, opacity: 1.0 }) : fallbackMat; 
+                    const matShort = textures.short ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: false, opacity: 1.0 }) : fallbackMat;
+                    const matBottom = fallbackMat;
+
+                    materials = [matLong, matLong, matTop, matBottom, matShort, matShort];
                 } else {
                     materials = fallbackMat;
                 }
 
-                // Верхня частина
+                // Верхня (основна) частина кришки
                 const topCover = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
+                // Зсуваємо її вгору, щоб вона стояла НА сходинці
                 topCover.position.y = stepH / 2; 
-                
-                // --- ВИПРАВЛЕННЯ: ВІДКЛЮЧАЄМО FRUSTUM CULLING ---
-                topCover.frustumCulled = false; // Не зникатиме при наближенні камери
 
-                // Нижня частина (сходинка)
-                const stepMat = new THREE.MeshStandardMaterial({color: 0x228822, roughness: 0.8, side: THREE.DoubleSide});
+                // Нижня частина (сходинка) - просто зелена або сіра
+                const stepMat = new THREE.MeshStandardMaterial({color: 0x228822, roughness: 0.8});
                 const stepCover = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD), stepMat);
+                // Зсуваємо її вниз відносно центру групи, але вона все одно вище 0
                 stepCover.position.y = -(h / 2); 
-                stepCover.frustumCulled = false;
 
+                // Об'єднуємо
                 group.add(stepCover);
                 group.add(topCover);
+                
+                // Коригуємо загальну позицію групи, щоб "дно" сходинки було на рівні установки
+                // Центр групи зараз між двома частинами. 
                 break;
                 
             case 'motor':
-                const motLen = 0.52; // Було 0.78
+                const motLen = 0.78; 
                 const motRad = 0.30;
                 const cyl = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, motLen, 32), this.getMaterial('metal'));
                 cyl.rotation.z = Math.PI/2;
@@ -628,76 +599,36 @@ class SceneGraph {
     }
 
     initChassis() {
-        // --- 3D МОДЕЛЬ РАМИ (ПЛАСТИК, ТЕМНО-СІРИЙ, 5 БАЛОК) ---
-        const frameMat = new THREE.MeshStandardMaterial({
-            color: CONFIG.THEME.CHASSIS_COLOR, // 0x333333
-            roughness: 0.7,
-            metalness: 0.1
-        });
+        // Рама з текстурою (якщо є) або колір
+        const w = 1.9;
+        const h = 0.1;
+        const d = 4.0;
         
-        const holeMat = new THREE.MeshBasicMaterial({color: 0x111111});
-
-        const frameGroup = new THREE.Group();
-        this.worldRoot.add(frameGroup);
-
-        // 1. БОКОВІ БАЛКИ
-        const sideGeo = new THREE.BoxGeometry(0.15, 0.3, 4.0);
+        // --- 1. ТЕКСТУРИ: ВЕРХ + НИЗ = ФОТО, БОКИ = СІРИЙ ---
+        let materials;
+        const matGrayEdge = new THREE.MeshStandardMaterial({color: CONFIG.THEME.CHASSIS_EDGE_GRAY, metalness: 0.5, roughness: 0.5});
         
-        const leftBeam = new THREE.Mesh(sideGeo, frameMat);
-        leftBeam.position.set(-0.85, 0, 0); 
-        frameGroup.add(leftBeam);
+        if (textures.chassis) {
+            const matTopBottom = new THREE.MeshStandardMaterial({ map: textures.chassis });
+            
+            // BoxGeometry materials: Right, Left, Top, Bottom, Front, Back
+            materials = [ 
+                matGrayEdge,  // Right
+                matGrayEdge,  // Left
+                matTopBottom, // TOP (ФОТО)
+                matTopBottom, // Bottom (ФОТО)
+                matGrayEdge,  // Front
+                matGrayEdge   // Back
+            ];
+        } else {
+            // Fallback якщо текстури немає
+            const fallbackMat = new THREE.MeshPhongMaterial({color: CONFIG.THEME.CHASSIS_COLOR});
+            materials = fallbackMat;
+        }
 
-        const rightBeam = new THREE.Mesh(sideGeo, frameMat);
-        rightBeam.position.set(0.85, 0, 0);
-        frameGroup.add(rightBeam);
-
-        // 2. ПОПЕРЕЧНІ БАЛКИ
-        const crossGeo = new THREE.BoxGeometry(1.55, 0.3, 0.15);
-        const frontCross = new THREE.Mesh(crossGeo, frameMat);
-        frontCross.position.set(0, 0, -0.8);
-        frameGroup.add(frontCross);
-
-        const backCross = new THREE.Mesh(crossGeo, frameMat);
-        backCross.position.set(0, 0, 0.8);
-        frameGroup.add(backCross);
-
-        // 3. ЦЕНТРАЛЬНА БАЛКА
-        const centerBeamGeo = new THREE.BoxGeometry(0.3, 0.3, 1.6);
-        const centerBeam = new THREE.Mesh(centerBeamGeo, frameMat);
-        centerBeam.position.set(0, 0, 0); 
-        frameGroup.add(centerBeam);
-
-        // 4. ОТВОРИ
-        const sideHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.16, 8);
-        sideHoleGeo.rotateZ(Math.PI/2);
-
-        const zPositionsSide = [-1.8, -0.5, 0, 0.5, 1.8]; 
+        const chassis = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
+        this.worldRoot.add(chassis);
         
-        zPositionsSide.forEach(z => {
-            const hl = new THREE.Mesh(sideHoleGeo, holeMat);
-            hl.position.set(-0.85, 0, z);
-            frameGroup.add(hl);
-            const hr = new THREE.Mesh(sideHoleGeo, holeMat);
-            hr.position.set(0.85, 0, z);
-            frameGroup.add(hr);
-        });
-
-        const midHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.31, 8); 
-        const h1 = new THREE.Mesh(midHoleGeo, holeMat);
-        h1.position.set(0, 0, -0.8); 
-        frameGroup.add(h1);
-
-        const h2 = new THREE.Mesh(midHoleGeo, holeMat);
-        h2.position.set(0, 0, 0.8); 
-        frameGroup.add(h2);
-        
-        const zPositionsCenter = [-0.6, -0.2, 0.2, 0.6];
-        zPositionsCenter.forEach(z => {
-            const hc = new THREE.Mesh(midHoleGeo, holeMat);
-            hc.position.set(0, 0, z);
-            frameGroup.add(hc);
-        });
-
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
         const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.9, 12); 
         
@@ -755,15 +686,11 @@ class SceneGraph {
         preview.position.set(0, 0.5, 0);
         preview.traverse(c => {
             if(c.isMesh) {
-                // Примусово клонуємо матеріали для уникнення конфліктів
-                c.material = Array.isArray(c.material) ? c.material.map(m => m.clone()) : c.material.clone();
-                const materials = Array.isArray(c.material) ? c.material : [c.material];
-                materials.forEach(m => {
-                    m.transparent = true;
-                    m.opacity = 0.8;
-                    m.emissive = new THREE.Color(0x004488);
-                    m.emissiveIntensity = 0.2;
-                });
+                c.material = c.material.clone();
+                c.material.transparent = true;
+                c.material.opacity = 0.8;
+                c.material.emissive = new THREE.Color(0x004488);
+                c.material.emissiveIntensity = 0.2;
             }
         });
         group.add(preview);
@@ -816,11 +743,8 @@ class GameLogic {
         // Було 0.20, стало 0.50 (щоб врахувати нову сходинку)
         this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0), 'TOP');
         
-        // --- ЗМІНЕНО ПОЗИЦІЮ МОТОРІВ (ЩОБ ВПИРАЛИСЯ В КРАЙНЮ БАЛКУ) ---
-        // Було 0.35, стало 0.25 (нижче, щоб лягти на раму)
-        // Було 1.2 та -0.5, змінимо, щоб впирались
-        this.createSnap('motor', new THREE.Vector3(0, 0.25, 1.4), 'TOP'); // Трохи зміщено по Z
-        this.createSnap('motor', new THREE.Vector3(0, 0.25, -0.6), 'TOP');
+        this.createSnap('motor', new THREE.Vector3(0, 0.35, 1.2), 'TOP');
+        this.createSnap('motor', new THREE.Vector3(0, 0.35, -0.5), 'TOP');
         
         // --- ЗМІНЕНО ВИСОТУ ДАТЧИКА (ПІДНЯТО) ---
         // Було 0.52, стало 0.95 (щоб він стояв на новій вищій кришці)
@@ -846,7 +770,7 @@ class GameLogic {
             ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
             snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2;
         } else if(type === 'cover_green') {
-            // Візуалізація привида для нової дворівневої кришки
+            // Візуалізація привида для нової дворівневої кришки - спрощено просто великий бокс
             ghostGeo = new THREE.BoxGeometry(1.9, 0.8, 4.0); // Трохи вище
         } else if(type === 'sensor') {
             ghostGeo = new THREE.BoxGeometry(0.8, 0.3, 0.2);
@@ -854,12 +778,10 @@ class GameLogic {
             ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
         }
 
-        // --- ВАЖЛИВО: ПРИВИДИ НЕВИДИМІ ЗА ЗАМОВЧУВАННЯМ ---
         const ghostMat = new THREE.MeshBasicMaterial({
-            color: CONFIG.THEME.GHOST_VALID, wireframe: true, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false
+            color: CONFIG.THEME.GHOST_VALID, wireframe: true, transparent: true, opacity: 0.3
         });
         const ghost = new THREE.Mesh(ghostGeo, ghostMat);
-        ghost.visible = false; // Приховано!
         snap.add(ghost);
 
         snap.userData = { isSnap: true, type: type, occupied: false, mesh: ghost };
@@ -940,10 +862,6 @@ class GameLogic {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return null; 
         }
-        
-        // --- ОНОВЛЕНО: ТЕПЕР ПЕРЕВІРКА ПРИВ'ЯЗКИ НЕ ЗАЛЕЖИТЬ ВІД ВИДИМОСТІ ---
-        // Ми просто шукаємо найближчий слот, навіть якщо його не видно
-        
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
             if (snap.userData.type !== part.userData.type) continue;
@@ -954,53 +872,22 @@ class GameLogic {
         }
         return bestSnap;
     }
-    
-    // --- ОНОВЛЕНО: ЛОГІКА "РОЗУМНОЇ" ПІДСВІТКИ (ТІЛЬКИ ЧЕРВОНИМ НАЙБЛИЖЧЕ) ---
-    updateHighlights(activePart, bestSnap) {
-        // Якщо нема активної деталі, ховаємо все
-        if (!activePart) {
-            this.snaps.forEach(s => {
-                if (!s.userData.occupied) {
-                     s.userData.mesh.visible = false;
-                }
-            });
-            return;
-        }
-        
-        const type = activePart.userData.type;
-        
-        // Перевірка умови для сенсора
+
+    setHighlight(type, isActive) {
         if (type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
-            if (!isCoverInstalled) {
-                 this.snaps.forEach(s => { if(s.userData.type === 'sensor') s.userData.mesh.visible = false; });
-                 return;
-            }
+            if (!isCoverInstalled) return;
         }
-
         this.snaps.forEach(snap => {
-            // Пропускаємо зайняті та чужі типи
-            if (snap.userData.occupied || snap.userData.type !== type) {
-                 if (!snap.userData.occupied) snap.userData.mesh.visible = false;
-                 return;
-            }
-            
-            const mesh = snap.userData.mesh;
-            
-            // Якщо це "найкращий" (найближчий) слот - показуємо червоним
-            if (snap === bestSnap) {
-                mesh.visible = true;
-                mesh.material.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); // Червоний
-                mesh.material.opacity = 0.8;
-                mesh.material.needsUpdate = true;
-                
-                // ВАЖЛИВО: Щоб було видно крізь деталі
-                mesh.material.depthTest = false;
-                mesh.material.depthWrite = false;
-                mesh.renderOrder = 999;
-            } else {
-                // Всі інші - ховаємо
-                mesh.visible = false;
+            if (snap.userData.type === type && !snap.userData.occupied) {
+                const mat = snap.userData.mesh.material;
+                if (isActive) {
+                    mat.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); 
+                    mat.opacity = 0.8;
+                } else {
+                    mat.color.setHex(CONFIG.THEME.GHOST_VALID); 
+                    mat.opacity = 0.3;
+                }
             }
         });
     }
@@ -1043,23 +930,11 @@ class GameLogic {
             if (child.isMesh) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 materials.forEach(mat => {
-                    // --- ВИПРАВЛЕНО: ЗБЕРІГАЄМО ПАРАМЕТРИ ДЛЯ КРИШКИ ПРИ ВСТАНОВЛЕННІ ---
-                    if (part.userData.type === 'cover_green') {
-                        mat.side = THREE.DoubleSide; // Гарантована видимість
-                        mat.transparent = true; 
-                        mat.opacity = 1.0;
-                        mat.alphaTest = 0.1; 
-                        mat.depthWrite = true;
-                    } else {
-                        mat.transparent = false;
-                        mat.opacity = 1.0;
-                    }
+                    mat.transparent = false;
+                    mat.opacity = 1.0;
+                    mat.depthWrite = true;
                     mat.needsUpdate = true;
                 });
-                // Запобігаємо зникненню при встановленні
-                if (part.userData.type === 'cover_green') {
-                    child.frustumCulled = false;
-                }
             }
         });
         
@@ -1068,10 +943,6 @@ class GameLogic {
         snap.userData.occupied = true;
         snap.visible = false;
         this.installedCount++;
-        
-        // Очищаємо підсвітку після встановлення
-        this.updateHighlights(null, null);
-        
         this.updateCounter();
         Audio.sfxSnap();
     }
@@ -1193,10 +1064,7 @@ class InputSystem {
                     newPart.position.z += 0.5; 
                     state.grabbedObject = newPart;
                     newPart.userData.grabbedBy = handIndex;
-                    
-                    // --- ОНОВЛЕНО: НЕ ПІДСВІЧУЄМО ВСЕ ПІДРЯД, ТІЛЬКИ ПРИ ПЕРЕМІЩЕННІ ---
-                    // this.game.setHighlight(newPart.userData.type, true); // ВИДАЛЕНО
-                    
+                    this.game.setHighlight(newPart.userData.type, true);
                     return; 
                 }
             }
@@ -1225,9 +1093,7 @@ class InputSystem {
                 state.grabbedObject = obj;
                 obj.userData.grabbedBy = handIndex; 
                 Audio.sfxGrab();
-                
-                // --- ОНОВЛЕНО: НЕ ПІДСВІЧУЄМО ВСЕ ОДРАЗУ ---
-                // this.game.setHighlight(obj.userData.type, true); // ВИДАЛЕНО
+                this.game.setHighlight(obj.userData.type, true);
                 
                 if (obj.userData.inInventory) {
                     obj.userData.inInventory = false; 
@@ -1241,10 +1107,7 @@ class InputSystem {
     onGrabEnd(state) {
         if (state.grabbedObject) {
             const type = state.grabbedObject.userData.type;
-            
-            // --- ОНОВЛЕНО: ХОВАЄМО ПІДСВІТКУ ПРИ ВІДПУСКАННІ ---
-            // this.game.setHighlight(type, false); // ЗАМІНЕНО НА:
-            this.game.updateHighlights(null, null);
+            this.game.setHighlight(type, false);
 
             if (state.potentialSnap) {
                 this.game.installPart(state.grabbedObject, state.potentialSnap, state.grabbedObject.userData.grabbedBy);
@@ -1266,12 +1129,7 @@ class InputSystem {
 
     handleDrag(state, pos) {
         state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
-        
-        // --- ОНОВЛЕНО: ШУКАЄМО НАЙБЛИЖЧИЙ СЛОТ ТА ПІДСВІЧУЄМО ЙОГО ---
-        const bestSnap = this.game.checkSnap(state.grabbedObject, pos);
-        state.potentialSnap = bestSnap;
-        
-        this.game.updateHighlights(state.grabbedObject, bestSnap);
+        state.potentialSnap = this.game.checkSnap(state.grabbedObject, pos);
     }
 }
 
