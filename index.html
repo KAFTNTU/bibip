@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.20 [FIXED]</title>
+    <title>TNTU ENGINEERING SUITE v10.21 [ZOOM GESTURE]</title>
     
     <style>
         :root {
@@ -218,11 +218,10 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.20 [FIXED VERSION]
- * - Fixed critical ternary operator syntax error in cover_green
- * - Fixed matShort transparency settings
- * - Fixed installPart loop syntax
- * - Removed redundant alphaTest
+ * TNTU ENGINEERING SUITE v10.21 [ZOOM GESTURE]
+ * - Added 'Thumbs Up' gesture for Zoom In/Out
+ * - Move Right (with Thumbs Up) -> Zoom In
+ * - Move Left (with Thumbs Up) -> Zoom Out
  * ============================================================================
  */
 
@@ -272,6 +271,7 @@ const CONFIG = {
         CURSOR_OPEN: 0xff0000, 
         CURSOR_CLOSED: 0x00aaff,
         CURSOR_ROTATE: 0xffff00,
+        CURSOR_SCALE: 0xe600ff, // Фіолетовий для зуму
         DISPENSER_BASE: 0x004466,
         DISPENSER_HOVER: 0x0088cc,
         DISPENSER_COOLDOWN_COLOR: 0x330000 
@@ -765,8 +765,18 @@ class SceneGraph {
         cursor.position.copy(pos);
         let col = CONFIG.THEME.CURSOR_OPEN;
         let scale = 1.2;
-        if (mode === 1) { col = CONFIG.THEME.CURSOR_CLOSED; scale = 0.8; }
-        else if (mode === 2) { col = CONFIG.THEME.CURSOR_ROTATE; scale = 1.5; }
+        
+        if (mode === 1) { // GRAB
+            col = CONFIG.THEME.CURSOR_CLOSED; 
+            scale = 0.8; 
+        } else if (mode === 2) { // ROTATE
+            col = CONFIG.THEME.CURSOR_ROTATE; 
+            scale = 1.5; 
+        } else if (mode === 3) { // SCALE/ZOOM
+            col = CONFIG.THEME.CURSOR_SCALE; 
+            scale = 1.4;
+        }
+
         cursor.userData.dot.material.color.setHex(col);
         cursor.userData.ring.material.color.setHex(col);
         cursor.userData.ring.scale.setScalar(scale);
@@ -1173,9 +1183,12 @@ class InputSystem {
         const pos = this.filters[index].process(rawPos, now);
         const asp = window.innerWidth / window.innerHeight;
 
+        // Check if fingers are straight
         const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
         const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
         const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
+        const ringStraight = this.isStraight(landmarks[0], landmarks[16], landmarks[13]);
+        const pinkyStraight = this.isStraight(landmarks[0], landmarks[20], landmarks[17]);
 
         const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
         const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
@@ -1183,20 +1196,42 @@ class InputSystem {
         const pinchT = CONFIG.INPUT.PINCH_THRESHOLD_START;
         let newMode = 0; 
 
-        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) newMode = 2; 
-        else if (dThumbIndex < pinchT) newMode = 1; 
+        // 1. ROTATE (Open Hand)
+        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) {
+            newMode = 2; 
+        }
+        // 2. GRAB (Pinch)
+        else if (dThumbIndex < pinchT) {
+            newMode = 1; 
+        }
+        // 3. ZOOM (Thumbs Up: Thumb straight, others folded)
+        else if (thumbStraight && !indexStraight && !middleStraight && !ringStraight && !pinkyStraight) {
+            newMode = 3;
+        }
 
         this.sg.updateCursorState(index, pos, newMode);
 
         if (newMode === 2) {
+            // ROTATE LOGIC
             if (state.mode !== 2) { state.lastRotPos.copy(pos); Audio.sfxHover(); } 
             else this.handleRotation(state, pos);
             if (state.grabbedObject) this.onGrabEnd(state);
         } 
         else if (newMode === 1) {
+            // GRAB LOGIC
             if (state.mode !== 1) this.onGrabStart(state, pos, camera, index);
             else if (state.grabbedObject) this.handleDrag(state, pos);
-        } 
+        }
+        else if (newMode === 3) {
+            // ZOOM LOGIC
+            if (state.mode !== 3) { 
+                state.lastRotPos.copy(pos); 
+                Audio.sfxHover(); 
+            } else {
+                this.handleZoom(state, pos);
+            }
+            if (state.grabbedObject) this.onGrabEnd(state);
+        }
         else {
             if (state.mode === 1 && state.grabbedObject) this.onGrabEnd(state);
         }
@@ -1221,10 +1256,6 @@ class InputSystem {
                     newPart.position.z += 0.5; 
                     state.grabbedObject = newPart;
                     newPart.userData.grabbedBy = handIndex;
-                    
-                    // --- ОНОВЛЕНО: НЕ ПІДСВІЧУЄМО ВСЕ ПІДРЯД, ТІЛЬКИ ПРИ ПЕРЕМІЩЕННІ ---
-                    // this.game.setHighlight(newPart.userData.type, true); // ВИДАЛЕНО
-                    
                     return; 
                 }
             }
@@ -1254,9 +1285,6 @@ class InputSystem {
                 obj.userData.grabbedBy = handIndex; 
                 Audio.sfxGrab();
                 
-                // --- ОНОВЛЕНО: НЕ ПІДСВІЧУЄМО ВСЕ ОДРАЗУ ---
-                // this.game.setHighlight(obj.userData.type, true); // ВИДАЛЕНО
-                
                 if (obj.userData.inInventory) {
                     obj.userData.inInventory = false; 
                     obj.userData.basePos = null;
@@ -1270,8 +1298,6 @@ class InputSystem {
         if (state.grabbedObject) {
             const type = state.grabbedObject.userData.type;
             
-            // --- ОНОВЛЕНО: ХОВАЄМО ПІДСВІТКУ ПРИ ВІДПУСКАННІ ---
-            // this.game.setHighlight(type, false); // ЗАМІНЕНО НА:
             this.game.updateHighlights(null, null);
 
             if (state.potentialSnap) {
@@ -1294,12 +1320,33 @@ class InputSystem {
 
     handleDrag(state, pos) {
         state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
-        
-        // --- ОНОВЛЕНО: ШУКАЄМО НАЙБЛИЖЧИЙ СЛОТ ТА ПІДСВІЧУЄМО ЙОГО ---
         const bestSnap = this.game.checkSnap(state.grabbedObject, pos);
         state.potentialSnap = bestSnap;
-        
         this.game.updateHighlights(state.grabbedObject, bestSnap);
+    }
+
+    handleZoom(state, pos) {
+        // "Right increases" -> dx > 0 -> Zoom In -> Camera Z decreases
+        // "Left decreases" -> dx < 0 -> Zoom Out -> Camera Z increases
+        const dx = (pos.x - state.lastRotPos.x) * 2.5; // Sensitivity
+        
+        // We modify camera position via the Application instance
+        // Accessing global app instance if needed, or passing it down.
+        // For simplicity, we assume we can access game.app if we link it, or directly access scene/camera if stored.
+        // Since InputSystem has no direct ref to Camera in constructor, we use the one passed in update() or stored in game.
+        
+        // However, update() passes `camera`. Let's assume we can modify it directly.
+        // But handleZoom needs access to it. We will grab it from `this.game.app` if available, 
+        // OR we just assume `this.game.app` exists (I'll add it in Application constructor).
+        
+        if (this.game.app && this.game.app.camera) {
+            let newZ = this.game.app.camera.position.z - dx;
+            // Clamp Zoom
+            newZ = Math.max(2.0, Math.min(newZ, 8.0));
+            this.game.app.camera.position.z = newZ;
+        }
+        
+        state.lastRotPos.copy(pos);
     }
 }
 
@@ -1316,6 +1363,10 @@ class Application {
         this.scene.add(dir);
         this.sg = new SceneGraph(this);
         this.game = new GameLogic(this.sg);
+        
+        // Link app to game for camera access
+        this.game.app = this;
+        
         this.input = new InputSystem(this.game, this.sg);
     }
     render() { this.renderer.render(this.scene, this.camera); }
