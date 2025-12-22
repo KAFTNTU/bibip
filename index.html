@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.21 [ZOOM GESTURE]</title>
+    <title>TNTU ENGINEERING SUITE v10.29 [FULL FIX]</title>
     
     <style>
         :root {
@@ -184,6 +184,21 @@
             font-family: var(--mono-font);
         }
 
+        /* --- ІНДИКАТОР ОСВІТЛЕНОСТІ --- */
+        #light-indicator {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: green;
+            position: absolute;
+            z-index: 999;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
+            border: 2px solid rgba(0,0,0,0.5);
+            transition: background-color 0.2s, top 0.1s, left 0.1s;
+            pointer-events: none;
+            display: none;
+        }
+
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 
@@ -202,6 +217,7 @@
     <div id="viewport">
         <video id="video-background" playsinline muted></video>
         <canvas id="webgl-canvas"></canvas>
+        <div id="light-indicator"></div>
 
         <div id="hud-layer">
             <div class="counter-container">
@@ -218,27 +234,83 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.21 [ZOOM GESTURE]
- * - Added 'Thumbs Up' gesture for Zoom In/Out
- * - Move Right (with Thumbs Up) -> Zoom In
- * - Move Left (with Thumbs Up) -> Zoom Out
+ * TNTU ENGINEERING SUITE v10.29 [FULL FIX]
+ * - COMPLETE CODEBASE REGENERATION.
+ * - Zoom: Open Palm (5 fingers).
+ * - Rotate: 3 fingers.
+ * - Grab: Pinch.
+ * - Includes Crash Protection & Adaptive Vision.
  * ============================================================================
  */
 
-// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР ▼▼▼
+// --- ВІДЕО ПРОЦЕСОР (АДАПТИВНА ЯСКРАВІСТЬ) ---
+class VideoProcessor {
+    constructor() {
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 640;
+        this.canvas.height = 480;
+        this.ctx = this.canvas.getContext('2d');
+        this.indicator = document.getElementById('light-indicator');
+    }
+
+    computeAverageBrightness(width, height) {
+        const imgData = this.ctx.getImageData(0, 0, width, height).data;
+        let sum = 0;
+        const step = 16; 
+        let count = 0;
+        for (let i = 0; i < imgData.length; i += 4 * step) {
+            sum += (imgData[i] + imgData[i+1] + imgData[i+2]) / 3;
+            count++;
+        }
+        return sum / count;
+    }
+
+    getBrightnessProfile(avg) {
+        let profile = { brightness: 1, contrast: 1, color: 'green' };
+        if (avg < 70) {
+            profile = { brightness: 1.4, contrast: 1.3, color: '#ff0000' }; // Red
+        } else if (avg < 110) {
+            profile = { brightness: 1.2, contrast: 1.15, color: '#ffff00' }; // Yellow
+        } else if (avg > 160) {
+            profile = { brightness: 0.9, contrast: 0.95, color: 'green' };
+        }
+        return profile;
+    }
+
+    process(videoElement) {
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        this.ctx.filter = 'none';
+        this.ctx.drawImage(videoElement, 0, 0, w, h);
+        const avg = this.computeAverageBrightness(w, h);
+        const profile = this.getBrightnessProfile(avg);
+        this.ctx.filter = `brightness(${profile.brightness}) contrast(${profile.contrast})`;
+        this.ctx.drawImage(videoElement, 0, 0, w, h);
+        if (this.indicator) {
+            this.indicator.style.backgroundColor = profile.color;
+        }
+        return this.canvas;
+    }
+    
+    updateIndicatorPosition(screenPos) {
+        if (this.indicator && screenPos) {
+            this.indicator.style.left = `${screenPos.x + 20}px`; 
+            this.indicator.style.top = `${screenPos.y - 10}px`;
+            this.indicator.style.display = 'block';
+        } else {
+            this.indicator.style.display = 'none';
+        }
+    }
+}
+
 const TEXTURE_URLS = {
-    TOP: 'photo/top.jpg',          // Верхнє фото (кришка)
-    SIDE_LONG: 'photo/side_long.jpg',   // Довгий бік
-    SIDE_SHORT: 'photo/side_short.jpg', // Короткий бік
+    TOP: 'photo/top.jpg',
+    SIDE_LONG: 'photo/side_long.jpg',
+    SIDE_SHORT: 'photo/side_short.jpg',
 };
 
 const CONFIG = {
-    RENDER: {
-        FOV: 60,
-        NEAR_CLIP: 0.01, 
-        FAR_CLIP: 1000,
-        SHADOW_MAP_SIZE: 2048
-    },
+    RENDER: { FOV: 60, NEAR_CLIP: 0.01, FAR_CLIP: 1000 },
     PHYSICS: {
         ROTATION_SPEED: 0.6, 
         LERP_FACTOR: 0.2, 
@@ -247,11 +319,12 @@ const CONFIG = {
         BOB_SPEED: 2.0, 
         BOB_HEIGHT: 0.1, 
         REARRANGE_SPEED: 0.08,
-        DISPENSER_COOLDOWN: 5000 
+        DISPENSER_COOLDOWN: 5000,
+        ROTATION_SNAP_DEG: 15 
     },
     INPUT: {
-        PINCH_THRESHOLD_START: 0.04,
-        PINCH_THRESHOLD_END: 0.055,
+        PINCH_THRESHOLD: 0.05,
+        STABILITY_FRAMES: 8,
         CURSOR_SENSITIVITY: 1.45,
         FILTER_FREQUENCY: 60,
         FILTER_MIN_CUTOFF: 1.0,
@@ -260,20 +333,14 @@ const CONFIG = {
     },
     THEME: {
         PRIMARY: 0x00ffcc,
-        CHASSIS_COLOR: 0x333333, // Темно-сірий колір рами
-        INTERNAL_GREEN: 0x116611,
-        CHASSIS_EDGE_GRAY: 0x888888, 
-        
+        CHASSIS_COLOR: 0x333333,
         GHOST_VALID: 0x00ff00,     
-        GHOST_HIGHLIGHT: 0xff0000, // Червона підсвітка
-        
-        GHOST_INVALID: 0xff0000,
+        GHOST_HIGHLIGHT: 0xff0000,
         CURSOR_OPEN: 0xff0000, 
         CURSOR_CLOSED: 0x00aaff,
         CURSOR_ROTATE: 0xffff00,
-        CURSOR_SCALE: 0xe600ff, // Фіолетовий для зуму
+        CURSOR_SCALE: 0xe600ff,
         DISPENSER_BASE: 0x004466,
-        DISPENSER_HOVER: 0x0088cc,
         DISPENSER_COOLDOWN_COLOR: 0x330000 
     }
 };
@@ -282,14 +349,7 @@ const textureLoader = new THREE.TextureLoader();
 const textures = { top: null, long: null, short: null, chassis: null };
 
 function loadTex(url) {
-    return textureLoader.load(url, 
-        (tex) => { 
-            tex.encoding = THREE.sRGBEncoding; 
-            tex.anisotropy = 16;
-        },
-        undefined,
-        (err) => { console.warn(`Текстура не знайдена: ${url}`); }
-    );
+    return textureLoader.load(url, (tex) => { tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 16; });
 }
 
 function loadChromaTex(url) {
@@ -297,34 +357,26 @@ function loadChromaTex(url) {
     const loader = new THREE.ImageLoader();
     loader.load(url, (image) => {
         const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
+        canvas.width = image.width; canvas.height = image.height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(image, 0, 0);
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imgData.data;
-        const threshold = 40; 
         for (let i = 0; i < data.length; i += 4) {
-            const r = data[i]; const g = data[i + 1]; const b = data[i + 2];
-            if (r < threshold && g < threshold && b < threshold) {
-                data[i] = 57; data[i + 1] = 255; data[i + 2] = 20;
+            if (data[i] < 40 && data[i+1] < 40 && data[i+2] < 40) {
+                data[i]=57; data[i+1]=255; data[i+2]=20;
             }
         }
         ctx.putImageData(imgData, 0, 0);
-        tex.image = canvas;
-        tex.encoding = THREE.sRGBEncoding; 
-        tex.anisotropy = 16;
-        tex.needsUpdate = true;
-    }, undefined, (err) => { console.warn('Texture error', url); });
+        tex.image = canvas; tex.encoding = THREE.sRGBEncoding; tex.needsUpdate = true;
+    });
     return tex;
 }
 
 if (TEXTURE_URLS.TOP) textures.top = loadChromaTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
-if (TEXTURE_URLS.CHASSIS) textures.chassis = loadChromaTex(TEXTURE_URLS.CHASSIS);
 
-// --- ФІЗИЧНІ ФІЛЬТРИ ---
 class LowPassFilter {
     constructor(alpha) { this.setAlpha(alpha); this.y = null; this.s = null; }
     setAlpha(alpha) { this.alpha = alpha; }
@@ -371,7 +423,6 @@ class Vector3Filter {
     }
 }
 
-// --- АУДІО ДВИГУН ---
 class AudioEngine {
     constructor() { this.context = null; this.masterGain = null; this.isInitialized = false; }
     init() {
@@ -405,7 +456,6 @@ class AudioEngine {
 }
 const Audio = new AudioEngine();
 
-// --- ФАБРИКА ДЕТАЛЕЙ ---
 class ModelFactory {
     static getMaterial(type) {
         switch(type) {
@@ -439,46 +489,29 @@ class ModelFactory {
                 const innerRad = 0.40;
                 const thickness = 0.05;
                 const holeRad = 0.15; 
-
                 const gearShape = new THREE.Shape();
                 const step = (Math.PI * 2) / numTeeth;
-                
                 for (let i = 0; i < numTeeth; i++) {
-                    const a1 = i * step;
-                    const a2 = a1 + step * 0.25;
-                    const a3 = a1 + step * 0.5;
-                    const a4 = a1 + step * 0.75;
-                    
+                    const a1 = i * step; const a2 = a1 + step * 0.25; const a3 = a1 + step * 0.5;
                     if (i === 0) gearShape.moveTo(Math.cos(a1) * innerRad, Math.sin(a1) * innerRad);
                     else gearShape.lineTo(Math.cos(a1) * innerRad, Math.sin(a1) * innerRad);
-                    
                     gearShape.lineTo(Math.cos(a1) * radius, Math.sin(a1) * radius);
                     gearShape.lineTo(Math.cos(a2) * radius, Math.sin(a2) * radius);
                     gearShape.lineTo(Math.cos(a3) * innerRad, Math.sin(a3) * innerRad);
                 }
-                
                 const holePath = new THREE.Path();
                 holePath.absarc(0, 0, holeRad, 0, Math.PI * 2, true);
                 gearShape.holes.push(holePath);
-
                 const extrudeSettings = { depth: thickness, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 2 };
                 const gearGeom = new THREE.ExtrudeGeometry(gearShape, extrudeSettings);
-                
                 gearGeom.translate(0, 0, -thickness/2);
-
                 const gearBody = new THREE.Mesh(gearGeom, this.getMaterial('plastic'));
-                
                 const innerRing = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, thickness + 0.02, 16), this.getMaterial('metal'));
                 innerRing.rotation.x = Math.PI / 2;
-                
                 const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, thickness + 0.04, 8), new THREE.MeshBasicMaterial({color: 0x222222}));
                 pin.rotation.x = Math.PI / 2;
-
                 const gearVisGroup = new THREE.Group();
-                gearVisGroup.add(gearBody);
-                gearVisGroup.add(innerRing);
-                gearVisGroup.add(pin);
-                
+                gearVisGroup.add(gearBody, innerRing, pin);
                 group.add(gearVisGroup);
                 break;
 
@@ -519,86 +552,40 @@ class ModelFactory {
                 break;
 
             case 'cover_green':
-                // *** ДВОРІВНЕВА КРИШКА (v10.5) ***
-                const w = 1.9;  
-                const h = 0.625;
-                const d = 4.0;  
-                
-                const stepW = w * 0.75; 
-                const stepD = d * 0.75;
-                const stepH = 0.25; 
-                
+                const w = 1.9; const h = 0.625; const d = 4.0;  
+                const stepW = w * 0.75; const stepD = d * 0.75; const stepH = 0.25; 
                 let materials;
-                
                 const fallbackMat = new THREE.MeshStandardMaterial({
-                    color: 0x39ff14,
-                    roughness: 0.4,
-                    transparent: false,
-                    opacity: 1.0,
-                    side: THREE.DoubleSide,
-                    depthWrite: true,
-                    depthTest: true
+                    color: 0x39ff14, roughness: 0.4, transparent: false, opacity: 1.0,
+                    side: THREE.DoubleSide, depthWrite: true, depthTest: true
                 });
 
                 if (textures.top) {
                     const matTop = new THREE.MeshStandardMaterial({
-                        map: textures.top,
-                        transparent: false,
-                        opacity: 1.0,
-                        side: THREE.DoubleSide,
-                        depthWrite: true,
-                        depthTest: true
+                        map: textures.top, transparent: false, opacity: 1.0, side: THREE.DoubleSide, depthWrite: true, depthTest: true
                     });
-
-                    // -----------------------------------------------------------
-                    // FIX #1: Added ternary fallback (: fallbackMat)
-                    // -----------------------------------------------------------
                     const matLong = textures.long 
-                        ? new THREE.MeshStandardMaterial({
-                            map: textures.long,
-                            transparent: false,
-                            side: THREE.DoubleSide,
-                            depthWrite: true,
-                            depthTest: true
-                        }) 
+                        ? new THREE.MeshStandardMaterial({ map: textures.long, transparent: false, side: THREE.DoubleSide, depthWrite: true, depthTest: true }) 
                         : fallbackMat;
-
-                    // -----------------------------------------------------------
-                    // FIX #2: Fixed matShort transparency and closing braces
-                    // -----------------------------------------------------------
                     const matShort = textures.short 
-                        ? new THREE.MeshStandardMaterial({
-                            map: textures.short,
-                            transparent: false,
-                            side: THREE.DoubleSide,
-                            depthWrite: true,
-                            depthTest: true
-                        })
+                        ? new THREE.MeshStandardMaterial({ map: textures.short, transparent: false, side: THREE.DoubleSide, depthWrite: true, depthTest: true })
                         : fallbackMat;
-                    
                     const matBottom = fallbackMat;
-
                     materials = [matLong, matLong, matTop, matBottom, matShort, matShort];
                 } else {
                     materials = fallbackMat;
                 }
 
-                // Верхня частина
                 const topCover = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), materials);
                 topCover.position.y = stepH / 2; 
-
-                // Нижня частина (сходинка)
                 const stepMat = new THREE.MeshStandardMaterial({color: 0x228822, roughness: 0.8});
                 const stepCover = new THREE.Mesh(new THREE.BoxGeometry(stepW, stepH, stepD), stepMat);
                 stepCover.position.y = -(h / 2); 
-
-                group.add(stepCover);
-                group.add(topCover);
+                group.add(stepCover, topCover);
                 break;
                 
             case 'motor':
-                const motLen = 0.52; // Було 0.78
-                const motRad = 0.30;
+                const motLen = 0.52; const motRad = 0.30;
                 const cyl = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, motLen, 32), this.getMaterial('metal'));
                 cyl.rotation.z = Math.PI/2;
                 const box = new THREE.Mesh(new THREE.BoxGeometry(motLen, motRad*1.6, motRad*1.6), this.getMaterial('dark_metal'));
@@ -627,7 +614,6 @@ class ModelFactory {
     }
 }
 
-// --- СЦЕНА ТА ГРАФІКА ---
 class SceneGraph {
     constructor(renderEngine) {
         this.re = renderEngine;
@@ -640,7 +626,7 @@ class SceneGraph {
         this.re.scene.add(this.floatingRoot);
 
         this.dispenserRoot = new THREE.Group();
-        this.dispenserRoot.position.set(0, 0, -5); // У тій же площині, що й літаючі деталі
+        this.dispenserRoot.position.set(0, 0, -5);
         this.re.scene.add(this.dispenserRoot);
 
         this.cursors = [this.createCursor(), this.createCursor()];
@@ -660,102 +646,45 @@ class SceneGraph {
     }
 
     initChassis() {
-        // --- 3D МОДЕЛЬ РАМИ (ПЛАСТИК, ТЕМНО-СІРИЙ, 5 БАЛОК) ---
-        const frameMat = new THREE.MeshStandardMaterial({
-            color: CONFIG.THEME.CHASSIS_COLOR, // 0x333333
-            roughness: 0.7,
-            metalness: 0.1
-        });
-        
+        const frameMat = new THREE.MeshStandardMaterial({ color: CONFIG.THEME.CHASSIS_COLOR, roughness: 0.7, metalness: 0.1 });
         const holeMat = new THREE.MeshBasicMaterial({color: 0x111111});
-
         const frameGroup = new THREE.Group();
         this.worldRoot.add(frameGroup);
 
-        // 1. БОКОВІ БАЛКИ
         const sideGeo = new THREE.BoxGeometry(0.15, 0.3, 4.0);
-        
-        const leftBeam = new THREE.Mesh(sideGeo, frameMat);
-        leftBeam.position.set(-0.85, 0, 0); 
-        frameGroup.add(leftBeam);
+        const leftBeam = new THREE.Mesh(sideGeo, frameMat); leftBeam.position.set(-0.85, 0, 0); frameGroup.add(leftBeam);
+        const rightBeam = new THREE.Mesh(sideGeo, frameMat); rightBeam.position.set(0.85, 0, 0); frameGroup.add(rightBeam);
 
-        const rightBeam = new THREE.Mesh(sideGeo, frameMat);
-        rightBeam.position.set(0.85, 0, 0);
-        frameGroup.add(rightBeam);
-
-        // 2. ПОПЕРЕЧНІ БАЛКИ
         const crossGeo = new THREE.BoxGeometry(1.55, 0.3, 0.15);
-        const frontCross = new THREE.Mesh(crossGeo, frameMat);
-        frontCross.position.set(0, 0, -0.8);
-        frameGroup.add(frontCross);
+        const frontCross = new THREE.Mesh(crossGeo, frameMat); frontCross.position.set(0, 0, -0.8); frameGroup.add(frontCross);
+        const backCross = new THREE.Mesh(crossGeo, frameMat); backCross.position.set(0, 0, 0.8); frameGroup.add(backCross);
 
-        const backCross = new THREE.Mesh(crossGeo, frameMat);
-        backCross.position.set(0, 0, 0.8);
-        frameGroup.add(backCross);
-
-        // 3. ЦЕНТРАЛЬНА БАЛКА
         const centerBeamGeo = new THREE.BoxGeometry(0.3, 0.3, 1.6);
-        const centerBeam = new THREE.Mesh(centerBeamGeo, frameMat);
-        centerBeam.position.set(0, 0, 0); 
-        frameGroup.add(centerBeam);
+        const centerBeam = new THREE.Mesh(centerBeamGeo, frameMat); centerBeam.position.set(0, 0, 0); frameGroup.add(centerBeam);
 
-        // 4. ОТВОРИ
-        const sideHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.16, 8);
-        sideHoleGeo.rotateZ(Math.PI/2);
-
+        const sideHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.16, 8); sideHoleGeo.rotateZ(Math.PI/2);
         const zPositionsSide = [-1.8, -0.5, 0, 0.5, 1.8]; 
-        
         zPositionsSide.forEach(z => {
-            const hl = new THREE.Mesh(sideHoleGeo, holeMat);
-            hl.position.set(-0.85, 0, z);
-            frameGroup.add(hl);
-            const hr = new THREE.Mesh(sideHoleGeo, holeMat);
-            hr.position.set(0.85, 0, z);
-            frameGroup.add(hr);
+            const hl = new THREE.Mesh(sideHoleGeo, holeMat); hl.position.set(-0.85, 0, z); frameGroup.add(hl);
+            const hr = new THREE.Mesh(sideHoleGeo, holeMat); hr.position.set(0.85, 0, z); frameGroup.add(hr);
         });
 
         const midHoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.31, 8); 
-        const h1 = new THREE.Mesh(midHoleGeo, holeMat);
-        h1.position.set(0, 0, -0.8); 
-        frameGroup.add(h1);
-
-        const h2 = new THREE.Mesh(midHoleGeo, holeMat);
-        h2.position.set(0, 0, 0.8); 
-        frameGroup.add(h2);
+        const h1 = new THREE.Mesh(midHoleGeo, holeMat); h1.position.set(0, 0, -0.8); frameGroup.add(h1);
+        const h2 = new THREE.Mesh(midHoleGeo, holeMat); h2.position.set(0, 0, 0.8); frameGroup.add(h2);
         
         const zPositionsCenter = [-0.6, -0.2, 0.2, 0.6];
         zPositionsCenter.forEach(z => {
-            const hc = new THREE.Mesh(midHoleGeo, holeMat);
-            hc.position.set(0, 0, z);
-            frameGroup.add(hc);
+            const hc = new THREE.Mesh(midHoleGeo, holeMat); hc.position.set(0, 0, z); frameGroup.add(hc);
         });
 
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
         const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.9, 12); 
-        
-        const fAxle = new THREE.Mesh(axGeo, axMat);
-        fAxle.rotation.z = Math.PI/2; fAxle.position.set(0, 0, -1.2);
-        this.worldRoot.add(fAxle);
-        
-        const bAxle = new THREE.Mesh(axGeo, axMat);
-        bAxle.rotation.z = Math.PI/2; bAxle.position.set(0, 0, 1.2);
-        this.worldRoot.add(bAxle);
-        
+        const fAxle = new THREE.Mesh(axGeo, axMat); fAxle.rotation.z = Math.PI/2; fAxle.position.set(0, 0, -1.2); this.worldRoot.add(fAxle);
+        const bAxle = new THREE.Mesh(axGeo, axMat); bAxle.rotation.z = Math.PI/2; bAxle.position.set(0, 0, 1.2); this.worldRoot.add(bAxle);
         const stub = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
-        
-        [-1.0, 0.0, 1.0].forEach(z => {
-            const m = new THREE.Mesh(stub, axMat);
-            m.rotation.z = Math.PI/2;
-            m.position.set(-1.05, 0, z);
-            this.worldRoot.add(m);
-        });
-
-        [-1.2, -0.4, 0.4, 1.2].forEach(z => {
-            const m = new THREE.Mesh(stub, axMat);
-            m.rotation.z = Math.PI/2;
-            m.position.set(1.05, 0, z);
-            this.worldRoot.add(m);
-        });
+        [-1.0, 0.0, 1.0].forEach(z => { const m = new THREE.Mesh(stub, axMat); m.rotation.z = Math.PI/2; m.position.set(-1.05, 0, z); this.worldRoot.add(m); });
+        [-1.2, -0.4, 0.4, 1.2].forEach(z => { const m = new THREE.Mesh(stub, axMat); m.rotation.z = Math.PI/2; m.position.set(1.05, 0, z); this.worldRoot.add(m); });
     }
 
     updateCursorState(index, pos, mode) {
@@ -767,14 +696,11 @@ class SceneGraph {
         let scale = 1.2;
         
         if (mode === 1) { // GRAB
-            col = CONFIG.THEME.CURSOR_CLOSED; 
-            scale = 0.8; 
+            col = CONFIG.THEME.CURSOR_CLOSED; scale = 0.8; 
         } else if (mode === 2) { // ROTATE
-            col = CONFIG.THEME.CURSOR_ROTATE; 
-            scale = 1.5; 
+            col = CONFIG.THEME.CURSOR_ROTATE; scale = 1.5; 
         } else if (mode === 3) { // SCALE/ZOOM
-            col = CONFIG.THEME.CURSOR_SCALE; 
-            scale = 1.4;
+            col = CONFIG.THEME.CURSOR_SCALE; scale = 1.4;
         }
 
         cursor.userData.dot.material.color.setHex(col);
@@ -805,18 +731,9 @@ class SceneGraph {
             }
         });
         group.add(preview);
-        const hitbox = new THREE.Mesh(
-            new THREE.BoxGeometry(1.5, 1.5, 1.5),
-            new THREE.MeshBasicMaterial({visible: false})
-        );
+        const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshBasicMaterial({visible: false}));
         group.add(hitbox);
-        group.userData = { 
-            isDispenser: true, 
-            type: type, 
-            previewMesh: preview,
-            baseMesh: base,
-            lastDispenseTime: 0 
-        };
+        group.userData = { isDispenser: true, type: type, previewMesh: preview, baseMesh: base, lastDispenseTime: 0 };
         this.dispenserRoot.add(group);
         return group;
     }
@@ -829,10 +746,7 @@ class GameLogic {
         this.snaps = [];
         this.installedCount = 0;
         this.totalParts = 0;
-        this.counts = {
-            wheel: { current: 0, max: 0 },
-            gear: { current: 0, max: 0 }
-        };
+        this.counts = { wheel: { current: 0, max: 0 }, gear: { current: 0, max: 0 } };
         this.dispensers = [];
         this.initLevel();
     }
@@ -849,19 +763,9 @@ class GameLogic {
         this.createSnap('board', new THREE.Vector3(0, 0.08, -1.0), 'TOP');
         this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
         this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
-        
-        // --- ЗМІНЕНО ВИСОТУ ВСТАНОВЛЕННЯ КРИШКИ (ПІДНЯТО) ---
-        // Було 0.20, стало 0.50 (щоб врахувати нову сходинку)
         this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0), 'TOP');
-        
-        // --- ЗМІНЕНО ПОЗИЦІЮ МОТОРІВ (ЩОБ ВПИРАЛИСЯ В КРАЙНЮ БАЛКУ) ---
-        // Було 0.35, стало 0.25 (нижче, щоб лягти на раму)
-        // Було 1.2 та -0.5, змінимо, щоб впирались
-        this.createSnap('motor', new THREE.Vector3(0, 0.25, 1.4), 'TOP'); // Трохи зміщено по Z
+        this.createSnap('motor', new THREE.Vector3(0, 0.25, 1.4), 'TOP');
         this.createSnap('motor', new THREE.Vector3(0, 0.25, -0.6), 'TOP');
-        
-        // --- ЗМІНЕНО ВИСОТУ ДАТЧИКА (ПІДНЯТО) ---
-        // Було 0.52, стало 0.95 (щоб він стояв на новій вищій кришці)
         this.createSnap('sensor', new THREE.Vector3(0, 0.95, 1.8), 'TOP');
 
         this.spawnLooseParts();
@@ -873,31 +777,21 @@ class GameLogic {
         snap.position.copy(pos);
         
         let ghostGeo;
-        if(type === 'gear') { 
-            // Для привидів використовуємо прості циліндри для швидкодії, але трохи менші
-            ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
-            snap.rotation.z = Math.PI/2; 
-        } else if(type === 'wheel') {
-            ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
-            snap.rotation.z = Math.PI/2;
-        } else if(type === 'battery') {
-            ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
-            snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2;
-        } else if(type === 'cover_green') {
-            // Візуалізація привида для нової дворівневої кришки
-            ghostGeo = new THREE.BoxGeometry(1.9, 0.8, 4.0); // Трохи вище
-        } else if(type === 'sensor') {
-            ghostGeo = new THREE.BoxGeometry(0.8, 0.3, 0.2);
-        } else {
-            ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
-        }
+        if(type === 'gear') ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
+        else if(type === 'wheel') ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
+        else if(type === 'battery') ghostGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12);
+        else if(type === 'cover_green') ghostGeo = new THREE.BoxGeometry(1.9, 0.8, 4.0);
+        else if(type === 'sensor') ghostGeo = new THREE.BoxGeometry(0.8, 0.3, 0.2);
+        else ghostGeo = new THREE.BoxGeometry(0.5, 0.1, 0.5);
 
-        // --- ВАЖЛИВО: ПРИВИДИ НЕВИДИМІ ЗА ЗАМОВЧУВАННЯМ ---
+        if(['gear', 'wheel'].includes(type)) snap.rotation.z = Math.PI/2;
+        if(type === 'battery') { snap.rotation.x = Math.PI/2; snap.rotation.z = Math.PI/2; }
+
         const ghostMat = new THREE.MeshBasicMaterial({
             color: CONFIG.THEME.GHOST_VALID, wireframe: true, transparent: true, opacity: 0.3, depthTest: false, depthWrite: false
         });
         const ghost = new THREE.Mesh(ghostGeo, ghostMat);
-        ghost.visible = false; // Приховано!
+        ghost.visible = false;
         snap.add(ghost);
 
         snap.userData = { isSnap: true, type: type, occupied: false, mesh: ghost };
@@ -905,16 +799,13 @@ class GameLogic {
         this.snaps.push(snap);
         this.totalParts++;
 
-        if (this.counts[type]) {
-            this.counts[type].max++;
-        }
+        if (this.counts[type]) this.counts[type].max++;
     }
 
     spawnLooseParts() {
-        this.snaps.forEach((snap, index) => {
+        this.snaps.forEach((snap) => {
             const type = snap.userData.type;
             if (type === 'wheel' || type === 'gear') return;
-
             const part = ModelFactory.createPart(type);
             part.position.set(0, 5, 0);
             if (type === 'cover_green') part.scale.y = 0.2; 
@@ -937,32 +828,22 @@ class GameLogic {
     tryDispense(type, dispenserObj) {
         const now = Date.now();
         if (dispenserObj.userData.lastDispenseTime && (now - dispenserObj.userData.lastDispenseTime < CONFIG.PHYSICS.DISPENSER_COOLDOWN)) {
-            Audio.sfxError(); 
-            return null;
+            Audio.sfxError(); return null;
         }
-
-        if (!this.counts[type]) return null;
-        if (this.counts[type].current >= this.counts[type].max) {
-            Audio.sfxError();
-            return null; 
+        if (!this.counts[type] || this.counts[type].current >= this.counts[type].max) {
+            Audio.sfxError(); return null; 
         }
 
         const part = ModelFactory.createPart(type);
         part.userData.type = type;
         part.userData.isInstalled = false;
         part.userData.inInventory = false; 
-        
-        // --- ВИПРАВЛЕНО: НЕ ПОВЕРТАЄМО ШЕСТЕРНЮ БОКОМ ---
-        // Якщо це шестерня, залишаємо її як є (ExtrudeGeometry facing Z)
-        // if (type === 'gear') { part.rotation.y = Math.PI/2; } // ВИДАЛЕНО
-
         this.sg.floatingRoot.add(part);
         this.parts.push(part);
         
         this.counts[type].current++;
         dispenserObj.userData.lastDispenseTime = now; 
         Audio.sfxDispense();
-        
         return part;
     }
 
@@ -972,16 +853,11 @@ class GameLogic {
     }
 
     checkSnap(part, partPos) {
-        let bestSnap = null;
-        let limit = 1.5; 
+        let bestSnap = null; let limit = 1.5; 
         if (part.userData.type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) return null; 
         }
-        
-        // --- ОНОВЛЕНО: ТЕПЕР ПЕРЕВІРКА ПРИВ'ЯЗКИ НЕ ЗАЛЕЖИТЬ ВІД ВИДИМОСТІ ---
-        // Ми просто шукаємо найближчий слот, навіть якщо його не видно
-        
         for (const snap of this.snaps) {
             if (snap.userData.occupied) continue;
             if (snap.userData.type !== part.userData.type) continue;
@@ -993,21 +869,12 @@ class GameLogic {
         return bestSnap;
     }
     
-    // --- ОНОВЛЕНО: ЛОГІКА "РОЗУМНОЇ" ПІДСВІТКИ (ТІЛЬКИ ЧЕРВОНИМ НАЙБЛИЖЧЕ) ---
     updateHighlights(activePart, bestSnap) {
-        // Якщо нема активної деталі, ховаємо все
         if (!activePart) {
-            this.snaps.forEach(s => {
-                if (!s.userData.occupied) {
-                     s.userData.mesh.visible = false;
-                }
-            });
+            this.snaps.forEach(s => { if (!s.userData.occupied) s.userData.mesh.visible = false; });
             return;
         }
-        
         const type = activePart.userData.type;
-        
-        // Перевірка умови для сенсора
         if (type === 'sensor') {
             const isCoverInstalled = this.parts.some(p => p.userData.type === 'cover_green' && p.userData.isInstalled);
             if (!isCoverInstalled) {
@@ -1015,29 +882,21 @@ class GameLogic {
                  return;
             }
         }
-
         this.snaps.forEach(snap => {
-            // Пропускаємо зайняті та чужі типи
             if (snap.userData.occupied || snap.userData.type !== type) {
                  if (!snap.userData.occupied) snap.userData.mesh.visible = false;
                  return;
             }
-            
             const mesh = snap.userData.mesh;
-            
-            // Якщо це "найкращий" (найближчий) слот - показуємо червоним
             if (snap === bestSnap) {
                 mesh.visible = true;
-                mesh.material.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT); // Червоний
+                mesh.material.color.setHex(CONFIG.THEME.GHOST_HIGHLIGHT);
                 mesh.material.opacity = 0.8;
                 mesh.material.needsUpdate = true;
-                
-                // ВАЖЛИВО: Щоб було видно крізь деталі
                 mesh.material.depthTest = false;
                 mesh.material.depthWrite = false;
                 mesh.renderOrder = 999;
             } else {
-                // Всі інші - ховаємо
                 mesh.visible = false;
             }
         });
@@ -1045,19 +904,13 @@ class GameLogic {
 
     rearrangeParts() {
         const activeParts = this.parts.filter(p => p.userData.inInventory);
-        const count = activeParts.length;
-        const cols = 2; 
-        const spacingX = 1.0;
-        const spacingY = 0.8;
+        const cols = 2; const spacingX = 1.0; const spacingY = 0.8;
         activeParts.forEach((part, index) => {
-            const col = index % cols;
-            const row = Math.floor(index / cols);
+            const col = index % cols; const row = Math.floor(index / cols);
             const x = (col - 0.5) * spacingX;
             const y = 1.5 + (row * spacingY);
             const z = 1.0 + (row * 0.1); 
-            if (part.userData.basePos) {
-                part.userData.basePos.set(x, y, z);
-            }
+            if (part.userData.basePos) part.userData.basePos.set(x, y, z);
         });
     }
 
@@ -1067,7 +920,6 @@ class GameLogic {
         part.position.copy(snap.position);
         
         if (part.userData.type === 'gear') {
-            // --- ВИПРАВЛЕНО: Повертаємо шестерню боком ТІЛЬКИ при встановленні ---
             part.rotation.set(0, Math.PI/2, 0);
         } else if (['wheel', 'motor', 'sensor'].includes(part.userData.type)) {
             part.rotation.set(0, 0, 0); 
@@ -1081,21 +933,12 @@ class GameLogic {
             if (child.isMesh) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 materials.forEach(mat => {
-                    // -----------------------------------------------------------------
-                    // FIX #3: FIXED SYNTAX ERROR (removed extra brace) & LOGIC
-                    // -----------------------------------------------------------------
                     if (part.userData.type === 'cover_green') {
-                        mat.transparent = false;
-                        mat.opacity = 1.0;
-                        mat.side = THREE.DoubleSide;
-                        mat.depthWrite = true;
-                        mat.depthTest = true;
+                        mat.transparent = false; mat.opacity = 1.0;
+                        mat.side = THREE.DoubleSide; mat.depthWrite = true; mat.depthTest = true;
                     } else {
-                        mat.transparent = false;
-                        mat.opacity = 1.0;
-                        mat.depthWrite = true;
+                        mat.transparent = false; mat.opacity = 1.0; mat.depthWrite = true;
                     }
-                    // FIX #4: No alphaTest here
                     mat.needsUpdate = true;
                 });
             }
@@ -1106,10 +949,7 @@ class GameLogic {
         snap.userData.occupied = true;
         snap.visible = false;
         this.installedCount++;
-        
-        // Очищаємо підсвітку після встановлення
         this.updateHighlights(null, null);
-        
         this.updateCounter();
         Audio.sfxSnap();
     }
@@ -1120,17 +960,33 @@ class GameLogic {
     }
 }
 
-// --- СИСТЕМА ВВОДУ ---
+const MODE = {
+    IDLE: 0,
+    GRAB: 1,
+    ROTATE: 2,
+    ZOOM: 3
+};
+
 class InputSystem {
     constructor(game, sceneGraph) {
         this.game = game;
         this.sg = sceneGraph;
         this.raycaster = new THREE.Raycaster();
-        this.states = [
-            { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() },
-            { handPos: new THREE.Vector3(), mode: 0, grabbedObject: null, potentialSnap: null, lastRotPos: new THREE.Vector3() }
-        ];
+        this.states = [this.createInitialState(), this.createInitialState()];
         this.filters = [new Vector3Filter(), new Vector3Filter()];
+    }
+
+    createInitialState() {
+        return {
+            mode: MODE.IDLE,
+            handPos: new THREE.Vector3(),
+            lastPos: new THREE.Vector3(),
+            grabbedObject: null,
+            potentialSnap: null,
+            pinchFrames: 0,
+            rotateFrames: 0,
+            zoomFrames: 0
+        };
     }
 
     isStraight(wrist, tip, lowerJoint) {
@@ -1146,21 +1002,20 @@ class InputSystem {
         
         const nowMs = Date.now();
         this.game.dispensers.forEach(d => {
-            if (d.userData.previewMesh) d.userData.previewMesh.rotation.z += 0.02; // Крутимо по Z, бо Extrude
-            
             if (d.userData.baseMesh) {
                 const timeLeft = CONFIG.PHYSICS.DISPENSER_COOLDOWN - (nowMs - d.userData.lastDispenseTime);
-                if (timeLeft > 0) {
-                    d.userData.baseMesh.material.color.setHex(CONFIG.THEME.DISPENSER_COOLDOWN_COLOR);
-                } else {
-                    d.userData.baseMesh.material.color.setHex(CONFIG.THEME.DISPENSER_BASE);
-                }
+                d.userData.baseMesh.material.color.setHex(timeLeft > 0 ? CONFIG.THEME.DISPENSER_COOLDOWN_COLOR : CONFIG.THEME.DISPENSER_BASE);
             }
         });
 
         results.multiHandLandmarks.forEach((landmarks, index) => {
             if (index >= 2) return; 
-            this.processHand(landmarks, index, camera, now);
+            try {
+                this.processHand(landmarks, index, camera, now);
+            } catch (e) {
+                console.error("Gesture processing error, resetting hand state:", e);
+                this.states[index] = this.createInitialState();
+            }
         });
     }
 
@@ -1170,20 +1025,16 @@ class InputSystem {
         
         const midX = (landmarks[8].x + landmarks[4].x) / 2;
         const midY = (landmarks[8].y + landmarks[4].y) / 2;
-        
         const x = ((1 - midX) * 2 - 1) * s;
         const y = (-midY * 2 + 1) * s;
-        
         const rawVec = new THREE.Vector3(x, y, 0.5);
         rawVec.unproject(camera);
         const dir = rawVec.sub(camera.position).normalize();
         const dist = (-5 - camera.position.z) / dir.z; 
         const rawPos = camera.position.clone().add(dir.multiplyScalar(dist));
-
         const pos = this.filters[index].process(rawPos, now);
         const asp = window.innerWidth / window.innerHeight;
 
-        // Check if fingers are straight
         const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
         const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
         const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
@@ -1192,55 +1043,86 @@ class InputSystem {
 
         const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
         const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
-        
-        const pinchT = CONFIG.INPUT.PINCH_THRESHOLD_START;
-        let newMode = 0; 
+        const pinchThreshold = CONFIG.INPUT.PINCH_THRESHOLD;
 
-        // 1. ROTATE (Open Hand)
-        if (thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchT && dThumbIndex > pinchT) {
-            newMode = 2; 
-        }
-        // 2. GRAB (Pinch)
-        else if (dThumbIndex < pinchT) {
-            newMode = 1; 
-        }
-        // 3. ZOOM (Thumbs Up: Thumb straight, others folded)
-        else if (thumbStraight && !indexStraight && !middleStraight && !ringStraight && !pinkyStraight) {
-            newMode = 3;
+        const isPinch = dThumbIndex < pinchThreshold;
+        const isFiveFingers = thumbStraight && indexStraight && middleStraight && ringStraight && pinkyStraight;
+        const isThreeFingers = thumbStraight && indexStraight && middleStraight && !ringStraight && !pinkyStraight;
+
+        state.pinchFrames = isPinch ? state.pinchFrames + 1 : 0;
+        state.zoomFrames = isFiveFingers ? state.zoomFrames + 1 : 0;
+        state.rotateFrames = isThreeFingers ? state.rotateFrames + 1 : 0;
+
+        const STABLE = CONFIG.INPUT.STABILITY_FRAMES;
+        const intentPinch = state.pinchFrames > STABLE;
+        const intentZoom = state.zoomFrames > STABLE;
+        const intentRotate = state.rotateFrames > STABLE;
+
+        switch (state.mode) {
+            case MODE.IDLE:
+                this.sg.updateCursorState(index, pos, 0); 
+                
+                if (intentPinch) {
+                    if (this.tryStartGrab(state, pos, camera, index)) {
+                        state.mode = MODE.GRAB;
+                        state.lastPos.copy(pos);
+                    }
+                } else if (intentZoom) {
+                    state.mode = MODE.ZOOM;
+                    state.lastPos.copy(pos);
+                    Audio.sfxHover();
+                } else if (intentRotate) {
+                    state.mode = MODE.ROTATE;
+                    state.lastPos.copy(pos);
+                    Audio.sfxHover();
+                }
+                break;
+
+            case MODE.GRAB:
+                this.sg.updateCursorState(index, pos, 1); 
+                
+                if (!intentPinch) {
+                    this.endGrab(state);
+                    state.mode = MODE.IDLE;
+                } else {
+                    this.handleDrag(state, pos);
+                }
+                break;
+
+            case MODE.ROTATE:
+                this.sg.updateCursorState(index, pos, 2); 
+                
+                if (!intentRotate) {
+                    this.finalizeRotation(); 
+                    state.mode = MODE.IDLE;
+                } else {
+                    this.handleRotation(state, pos);
+                }
+                break;
+
+            case MODE.ZOOM:
+                this.sg.updateCursorState(index, pos, 3); 
+                
+                if (!intentZoom) {
+                    state.mode = MODE.IDLE;
+                } else {
+                    this.handleZoom(state, pos);
+                }
+                break;
         }
 
-        this.sg.updateCursorState(index, pos, newMode);
-
-        if (newMode === 2) {
-            // ROTATE LOGIC
-            if (state.mode !== 2) { state.lastRotPos.copy(pos); Audio.sfxHover(); } 
-            else this.handleRotation(state, pos);
-            if (state.grabbedObject) this.onGrabEnd(state);
-        } 
-        else if (newMode === 1) {
-            // GRAB LOGIC
-            if (state.mode !== 1) this.onGrabStart(state, pos, camera, index);
-            else if (state.grabbedObject) this.handleDrag(state, pos);
-        }
-        else if (newMode === 3) {
-            // ZOOM LOGIC
-            if (state.mode !== 3) { 
-                state.lastRotPos.copy(pos); 
-                Audio.sfxHover(); 
-            } else {
-                this.handleZoom(state, pos);
-            }
-            if (state.grabbedObject) this.onGrabEnd(state);
-        }
-        else {
-            if (state.mode === 1 && state.grabbedObject) this.onGrabEnd(state);
-        }
-
-        state.mode = newMode;
         state.handPos.copy(pos);
     }
 
-    onGrabStart(state, pos, camera, handIndex) {
+    finalizeRotation() {
+        const step = THREE.MathUtils.degToRad(CONFIG.PHYSICS.ROTATION_SNAP_DEG);
+        const root = this.sg.worldRoot;
+        root.rotation.x = Math.round(root.rotation.x / step) * step;
+        root.rotation.y = Math.round(root.rotation.y / step) * step;
+        Audio.sfxHover();
+    }
+
+    tryStartGrab(state, pos, camera, handIndex) {
         const screen = pos.clone().project(camera);
         this.raycaster.setFromCamera(new THREE.Vector2(screen.x, screen.y), camera);
         
@@ -1256,15 +1138,16 @@ class InputSystem {
                     newPart.position.z += 0.5; 
                     state.grabbedObject = newPart;
                     newPart.userData.grabbedBy = handIndex;
-                    return; 
+                    return true; 
                 }
             }
         }
 
         const partHits = this.raycaster.intersectObjects(this.sg.floatingRoot.children, true);
         let target = null;
-        if(partHits.length > 0) target = partHits[0].object;
-        else {
+        if (partHits.length > 0) {
+            target = partHits[0].object;
+        } else {
             let minD = CONFIG.PHYSICS.GRAB_RADIUS;
             this.sg.floatingRoot.children.forEach(obj => {
                 if(obj.userData.type) {
@@ -1278,28 +1161,26 @@ class InputSystem {
             let obj = target;
             while(obj.parent && obj.parent !== this.sg.floatingRoot) obj = obj.parent;
             
-            if (obj.userData.grabbedBy !== -1 && obj.userData.grabbedBy !== undefined && obj.userData.grabbedBy !== handIndex) return;
+            if (obj.userData.grabbedBy !== -1 && obj.userData.grabbedBy !== handIndex) return false;
 
             if (obj.userData.type && !obj.userData.isInstalled) {
                 state.grabbedObject = obj;
                 obj.userData.grabbedBy = handIndex; 
                 Audio.sfxGrab();
-                
                 if (obj.userData.inInventory) {
                     obj.userData.inInventory = false; 
                     obj.userData.basePos = null;
                     this.game.rearrangeParts(); 
                 }
+                return true;
             }
         }
+        return false;
     }
 
-    onGrabEnd(state) {
+    endGrab(state) {
         if (state.grabbedObject) {
-            const type = state.grabbedObject.userData.type;
-            
             this.game.updateHighlights(null, null);
-
             if (state.potentialSnap) {
                 this.game.installPart(state.grabbedObject, state.potentialSnap, state.grabbedObject.userData.grabbedBy);
             } else {
@@ -1311,14 +1192,19 @@ class InputSystem {
     }
 
     handleRotation(state, pos) {
-        const dx = (pos.x - state.lastRotPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
-        const dy = (pos.y - state.lastRotPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
+        const dx = (pos.x - state.lastPos.x) * CONFIG.PHYSICS.ROTATION_SPEED;
+        const dy = (pos.y - state.lastPos.y) * CONFIG.PHYSICS.ROTATION_SPEED;
         this.sg.worldRoot.rotation.y += dx;
         this.sg.worldRoot.rotation.x += dy;
-        state.lastRotPos.copy(pos);
+        state.lastPos.copy(pos);
     }
 
     handleDrag(state, pos) {
+        if (!state.grabbedObject) {
+            console.warn("Safety Guard: Grabbed object lost/null. Resetting state.");
+            state.mode = MODE.IDLE;
+            return;
+        }
         state.grabbedObject.position.lerp(pos, CONFIG.PHYSICS.LERP_FACTOR);
         const bestSnap = this.game.checkSnap(state.grabbedObject, pos);
         state.potentialSnap = bestSnap;
@@ -1326,27 +1212,13 @@ class InputSystem {
     }
 
     handleZoom(state, pos) {
-        // "Right increases" -> dx > 0 -> Zoom In -> Camera Z decreases
-        // "Left decreases" -> dx < 0 -> Zoom Out -> Camera Z increases
-        const dx = (pos.x - state.lastRotPos.x) * 2.5; // Sensitivity
-        
-        // We modify camera position via the Application instance
-        // Accessing global app instance if needed, or passing it down.
-        // For simplicity, we assume we can access game.app if we link it, or directly access scene/camera if stored.
-        // Since InputSystem has no direct ref to Camera in constructor, we use the one passed in update() or stored in game.
-        
-        // However, update() passes `camera`. Let's assume we can modify it directly.
-        // But handleZoom needs access to it. We will grab it from `this.game.app` if available, 
-        // OR we just assume `this.game.app` exists (I'll add it in Application constructor).
-        
+        const dx = (pos.x - state.lastPos.x) * 2.5; 
         if (this.game.app && this.game.app.camera) {
             let newZ = this.game.app.camera.position.z - dx;
-            // Clamp Zoom
             newZ = Math.max(2.0, Math.min(newZ, 8.0));
-            this.game.app.camera.position.z = newZ;
+            this.game.app.camera.position.z += (newZ - this.game.app.camera.position.z) * 0.2;
         }
-        
-        state.lastRotPos.copy(pos);
+        state.lastPos.copy(pos);
     }
 }
 
@@ -1363,14 +1235,21 @@ class Application {
         this.scene.add(dir);
         this.sg = new SceneGraph(this);
         this.game = new GameLogic(this.sg);
-        
-        // Link app to game for camera access
         this.game.app = this;
-        
         this.input = new InputSystem(this.game, this.sg);
+        
+        this.videoProcessor = new VideoProcessor();
     }
     render() { this.renderer.render(this.scene, this.camera); }
     
+    getScreenPos(objectPos) {
+        const pos = objectPos.clone();
+        pos.project(this.camera);
+        const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+        const y = (-(pos.y * 0.5) + 0.5) * window.innerHeight;
+        return { x, y };
+    }
+
     async start() { 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         hands.setOptions({maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7});
@@ -1378,8 +1257,12 @@ class Application {
             this.input.update(results, this.camera);
         });
         const videoElement = document.getElementById('video-background');
+        
         const cam = new Camera(videoElement, {
-            onFrame: async () => await hands.send({image: videoElement}),
+            onFrame: async () => {
+                this.videoProcessor.process(videoElement);
+                await hands.send({image: this.videoProcessor.canvas});
+            },
             width: 1280, height: 720
         });
         try { await cam.start(); } catch (e) { console.error(e); alert("Камера зайнята."); }
@@ -1388,21 +1271,28 @@ class Application {
 
     loop() {
         requestAnimationFrame(() => this.loop());
-        const t = Date.now() * 0.001;
-        this.game.parts.forEach((c, i) => {
-            if (c.userData.inInventory && c.userData.basePos) {
-                const bobOffset = Math.sin(t * CONFIG.PHYSICS.BOB_SPEED + i) * CONFIG.PHYSICS.BOB_HEIGHT;
-                c.position.x += (c.userData.basePos.x - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                c.position.y += (c.userData.basePos.y + bobOffset - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                c.position.z += (c.userData.basePos.z - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
-                
-                // --- АНІМАЦІЯ: Крутимо по Z, щоб виглядало як колесо, що котиться ---
-                c.rotation.z += 0.002; 
-            } else if (!c.userData.isInstalled && c.userData.grabbedBy === -1) {
-                c.rotation.z += 0.002; c.rotation.y += 0.001;
+        
+        try {
+            const t = Date.now() * 0.001;
+            this.game.parts.forEach((c, i) => {
+                if (c.userData.inInventory && c.userData.basePos) {
+                    const bobOffset = Math.sin(t * CONFIG.PHYSICS.BOB_SPEED + i) * CONFIG.PHYSICS.BOB_HEIGHT;
+                    c.position.x += (c.userData.basePos.x - c.position.x) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                    c.position.y += (c.userData.basePos.y + bobOffset - c.position.y) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                    c.position.z += (c.userData.basePos.z - c.position.z) * CONFIG.PHYSICS.REARRANGE_SPEED;
+                } 
+            });
+            
+            const gearDispenser = this.game.dispensers.find(d => d.userData.type === 'gear');
+            if (gearDispenser) {
+                const screenPos = this.getScreenPos(gearDispenser.position);
+                this.videoProcessor.updateIndicatorPosition(screenPos);
             }
-        });
-        this.render();
+
+            this.render();
+        } catch (e) {
+            console.error("Main Loop Error (Recovering...):", e);
+        }
     }
 }
 
