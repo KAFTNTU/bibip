@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.27 [CRASH GUARD]</title>
+    <title>TNTU ENGINEERING SUITE v10.32 [PRODUCTION AR]</title>
     
     <style>
         :root {
@@ -145,6 +145,21 @@
             color: #fff;
             letter-spacing: 2px;
             text-shadow: 0 0 5px var(--primary-color);
+            transition: color 0.5s ease, text-shadow 0.5s ease;
+        }
+
+        /* --- СТАНИ ОСВІТЛЕННЯ ДЛЯ ЛІЧИЛЬНИКА --- */
+        #part-counter.green {
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        #part-counter.yellow {
+            color: #ffcc00;
+            text-shadow: 0 0 10px #ffcc00;
+        }
+        #part-counter.red {
+            color: #ff4444;
+            text-shadow: 0 0 10px #ff4444;
         }
 
         /* --- ЕКРАН ПЕРЕМОГИ --- */
@@ -170,20 +185,6 @@
             display: block;
         }
 
-        /* --- ІНДИКАТОР ОСВІТЛЕНОСТІ --- */
-        #light-indicator {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background: green;
-            position: absolute;
-            z-index: 999;
-            box-shadow: 0 0 10px rgba(255,255,255,0.5);
-            border: 2px solid rgba(0,0,0,0.5);
-            transition: background-color 0.2s, top 0.1s, left 0.1s;
-            pointer-events: none;
-        }
-
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 
@@ -202,7 +203,7 @@
     <div id="viewport">
         <video id="video-background" playsinline muted></video>
         <canvas id="webgl-canvas"></canvas>
-        <div id="light-indicator"></div>
+        <!-- Індикатор світла видалено, тепер це робить лічильник -->
 
         <div id="hud-layer">
             <div class="counter-container">
@@ -219,76 +220,70 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.27 [CRASH GUARD]
- * - Added Safety Checks in handleDrag to prevent freezing on null object.
- * - Added Try-Catch blocks in main loop and gesture processing.
- * - Added Emergency State Reset for hands if logic fails.
- * - Preserved Adaptive Vision, Indicators, and all Gameplay features.
+ * TNTU ENGINEERING SUITE v10.32 [PRODUCTION AR]
+ * - MediaPipe now uses RAW video stream (Performance boost).
+ * - Implemented Low-Cost Brightness Check (1 check/sec on 160x120 canvas).
+ * - UI Feedback integrated into Part Counter (Green/Yellow/Red).
+ * - Removed heavy per-frame canvas processing.
  * ============================================================================
  */
 
-// --- ВІДЕО ПРОЦЕСОР (АДАПТИВНА ЯСКРАВІСТЬ) ---
-class VideoProcessor {
+// --- ЛЕГКА ПЕРЕВІРКА ЯСКРАВОСТІ (1 РАЗ НА СЕКУНДУ) ---
+class SimpleBrightnessCheck {
     constructor() {
         this.canvas = document.createElement('canvas');
-        this.canvas.width = 640;
-        this.canvas.height = 480;
-        this.ctx = this.canvas.getContext('2d');
-        this.indicator = document.getElementById('light-indicator');
-    }
-
-    computeAverageBrightness(width, height) {
-        const imgData = this.ctx.getImageData(0, 0, width, height).data;
-        let sum = 0;
-        const step = 16; 
-        let count = 0;
+        this.canvas.width = 160;
+        this.canvas.height = 120;
         
-        for (let i = 0; i < imgData.length; i += 4 * step) {
-            sum += (imgData[i] + imgData[i+1] + imgData[i+2]) / 3;
-            count++;
-        }
-        return sum / count;
+        this.ctx = this.canvas.getContext('2d', {
+            willReadFrequently: true
+        });
+
+        this.interval = 1000; // 1 раз на секунду
+        this.lastCheck = 0;
+        this.lastLevel = null;
     }
 
-    getBrightnessProfile(avg) {
-        let profile = { brightness: 1, contrast: 1, color: 'green' };
-        if (avg < 70) {
-            profile = { brightness: 1.4, contrast: 1.3, color: '#ff0000' }; // Червоний
-        } else if (avg < 110) {
-            profile = { brightness: 1.2, contrast: 1.15, color: '#ffff00' }; // Жовтий
-        } else if (avg > 160) {
-            profile = { brightness: 0.9, contrast: 0.95, color: 'green' };
-        }
-        return profile;
-    }
+    update(video) {
+        const now = performance.now();
+        if (now - this.lastCheck < this.interval) return null;
+        this.lastCheck = now;
 
-    process(videoElement) {
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        this.ctx.filter = 'none';
-        this.ctx.drawImage(videoElement, 0, 0, w, h);
-        const avg = this.computeAverageBrightness(w, h);
-        const profile = this.getBrightnessProfile(avg);
-        this.ctx.filter = `brightness(${profile.brightness}) contrast(${profile.contrast})`;
-        this.ctx.drawImage(videoElement, 0, 0, w, h);
-        if (this.indicator) {
-            this.indicator.style.backgroundColor = profile.color;
+        // Малюємо маленький кадр для аналізу
+        this.ctx.drawImage(video, 0, 0, 160, 120);
+        const data = this.ctx.getImageData(0, 0, 160, 120).data;
+
+        let sum = 0;
+        // Читаємо пікселі з кроком для швидкості
+        for (let i = 0; i < data.length; i += 16) {
+            sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
         }
-        return this.canvas;
-    }
-    
-    updateIndicatorPosition(screenPos) {
-        if (this.indicator && screenPos) {
-            this.indicator.style.left = `${screenPos.x + 20}px`; 
-            this.indicator.style.top = `${screenPos.y - 10}px`;
-            this.indicator.style.display = 'block';
-        } else {
-            this.indicator.style.display = 'none';
-        }
+
+        const avg = sum / (data.length / 16);
+
+        let level;
+        if (avg < 60) level = 'red';       // Темно
+        else if (avg < 110) level = 'yellow'; // Так собі
+        else level = 'green';              // Чудово
+
+        // Оновлюємо тільки якщо стан змінився
+        if (level === this.lastLevel) return null;
+
+        this.lastLevel = level;
+        return level;
     }
 }
 
-// ▼▼▼ ШЛЯХИ ДО ТЕКСТУР ▼▼▼
+// Функція оновлення UI (без створення нових елементів)
+function updateCounterColor(level) {
+    const el = document.getElementById('part-counter');
+    if (!el) return;
+
+    el.classList.remove('green', 'yellow', 'red');
+    el.classList.add(level);
+}
+
+// ... [TEXTURES & CONFIG SAME AS BEFORE] ...
 const TEXTURE_URLS = {
     TOP: 'photo/top.jpg',
     SIDE_LONG: 'photo/side_long.jpg',
@@ -306,7 +301,8 @@ const CONFIG = {
         BOB_HEIGHT: 0.1, 
         REARRANGE_SPEED: 0.08,
         DISPENSER_COOLDOWN: 5000,
-        ROTATION_SNAP_DEG: 15 
+        ROTATION_SNAP_DEG: 15,
+        MAGNET_RADIUS: 0.15 
     },
     INPUT: {
         PINCH_THRESHOLD: 0.05,
@@ -363,6 +359,7 @@ if (TEXTURE_URLS.TOP) textures.top = loadChromaTex(TEXTURE_URLS.TOP);
 if (TEXTURE_URLS.SIDE_LONG) textures.long = loadTex(TEXTURE_URLS.SIDE_LONG);
 if (TEXTURE_URLS.SIDE_SHORT) textures.short = loadTex(TEXTURE_URLS.SIDE_SHORT);
 
+// ... [FILTERS & AUDIO] ...
 class LowPassFilter {
     constructor(alpha) { this.setAlpha(alpha); this.y = null; this.s = null; }
     setAlpha(alpha) { this.alpha = alpha; }
@@ -442,6 +439,7 @@ class AudioEngine {
 }
 const Audio = new AudioEngine();
 
+// ... [MODEL FACTORY & SCENE GRAPH] ...
 class ModelFactory {
     static getMaterial(type) {
         switch(type) {
