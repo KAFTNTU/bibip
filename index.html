@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.32 [PRODUCTION AR]</title>
+    <title>TNTU ENGINEERING SUITE v10.35 [FINAL STABLE]</title>
     
     <style>
         :root {
@@ -151,15 +151,15 @@
         /* --- СТАНИ ОСВІТЛЕННЯ ДЛЯ ЛІЧИЛЬНИКА --- */
         #part-counter.green {
             color: #00ff00;
-            text-shadow: 0 0 10px #00ff00;
+            text-shadow: 0 0 15px #00ff00;
         }
         #part-counter.yellow {
             color: #ffcc00;
-            text-shadow: 0 0 10px #ffcc00;
+            text-shadow: 0 0 15px #ffcc00;
         }
         #part-counter.red {
             color: #ff4444;
-            text-shadow: 0 0 10px #ff4444;
+            text-shadow: 0 0 15px #ff4444;
         }
 
         /* --- ЕКРАН ПЕРЕМОГИ --- */
@@ -203,8 +203,6 @@
     <div id="viewport">
         <video id="video-background" playsinline muted></video>
         <canvas id="webgl-canvas"></canvas>
-        <!-- Індикатор світла видалено, тепер це робить лічильник -->
-
         <div id="hud-layer">
             <div class="counter-container">
                 <span id="part-counter">0 / 23</span>
@@ -220,11 +218,10 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.32 [PRODUCTION AR]
- * - MediaPipe now uses RAW video stream (Performance boost).
- * - Implemented Low-Cost Brightness Check (1 check/sec on 160x120 canvas).
- * - UI Feedback integrated into Part Counter (Green/Yellow/Red).
- * - Removed heavy per-frame canvas processing.
+ * TNTU ENGINEERING SUITE v10.35 [FINAL STABLE]
+ * - CRITICAL FIX: VideoProcessor removed completely.
+ * - OPTIMIZATION: MediaPipe uses direct video stream.
+ * - LIGHT CHECK: Separate Low-Cost check (1/sec) updating text color.
  * ============================================================================
  */
 
@@ -283,7 +280,7 @@ function updateCounterColor(level) {
     el.classList.add(level);
 }
 
-// ... [TEXTURES & CONFIG SAME AS BEFORE] ...
+// ... [STANDARD CONFIGURATION] ...
 const TEXTURE_URLS = {
     TOP: 'photo/top.jpg',
     SIDE_LONG: 'photo/side_long.jpg',
@@ -1271,7 +1268,7 @@ class Application {
         this.game.app = this;
         this.input = new InputSystem(this.game, this.sg);
         
-        this.videoProcessor = new VideoProcessor();
+        // --- NO VideoProcessor HERE ---
     }
     render() { this.renderer.render(this.scene, this.camera); }
     
@@ -1291,10 +1288,17 @@ class Application {
         });
         const videoElement = document.getElementById('video-background');
         
+        // --- FIXED: Create Brightness Checker Here ---
+        const brightnessChecker = new SimpleBrightnessCheck();
+
         const cam = new Camera(videoElement, {
             onFrame: async () => {
-                this.videoProcessor.process(videoElement);
-                await hands.send({image: this.videoProcessor.canvas});
+                // --- FIXED: Direct Video to MediaPipe ---
+                await hands.send({image: videoElement}); 
+                
+                // --- FIXED: Separate Light Check ---
+                const level = brightnessChecker.update(videoElement);
+                if (level) updateCounterColor(level);
             },
             width: 1280, height: 720
         });
@@ -1317,11 +1321,7 @@ class Application {
                 } 
             });
             
-            const gearDispenser = this.game.dispensers.find(d => d.userData.type === 'gear');
-            if (gearDispenser) {
-                const screenPos = this.getScreenPos(gearDispenser.position);
-                this.videoProcessor.updateIndicatorPosition(screenPos);
-            }
+            // --- NO VideoProcessor calls here ---
 
             this.render();
         } catch (e) {
