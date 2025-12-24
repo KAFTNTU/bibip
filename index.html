@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.39 [CAMERA FIX]</title>
+    <title>TNTU ENGINEERING SUITE v10.46 [MOTOR FIT]</title>
     
     <style>
         :root {
@@ -126,7 +126,7 @@
 
         .counter-container {
             position: absolute;
-            bottom: 30px; 
+            bottom: 12%; 
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 5, 10, 0.6);
@@ -218,8 +218,9 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.39 [CAMERA FIX]
- * - FIXED: Removed call to deleted VideoProcessor in Application constructor/start.
+ * TNTU ENGINEERING SUITE v10.46 [MOTOR FIT]
+ * - UPDATED: Motors moved to x=0.58 / x=-0.58 to fit inside frame bounds.
+ * - UPDATED: Port positioned to be visible and clear of center beam.
  * - INPUT: Mechanics from v9.9 (Rotation: 3 fingers, Grab: Pinch).
  * - LIGHT: Checks every 1.5s via SimpleBrightnessCheck.
  * ============================================================================
@@ -282,7 +283,7 @@ const CONFIG = {
         ROTATION_SPEED: 0.9, 
         LERP_FACTOR: 0.4, 
         SNAP_DISTANCE: 0.8,
-        GRAB_RADIUS: 1.2,
+        GRAB_RADIUS: 1,
         BOB_SPEED: 1.5, 
         BOB_HEIGHT: 0.05, 
         REARRANGE_SPEED: 0.08,
@@ -441,6 +442,14 @@ class ModelFactory {
             case 'sensor_body': return new THREE.MeshStandardMaterial({color: 0x0055ff, roughness: 0.5});
             case 'sensor_eye': return new THREE.MeshStandardMaterial({color: 0xeeeeee, metalness: 0.1, roughness: 0.1});
             case 'sensor_pupil': return new THREE.MeshBasicMaterial({color: 0x000000});
+            // --- NEW MATERIALS FOR MOTOR ---
+            case 'frame_plastic': return new THREE.MeshStandardMaterial({color: 0x333333, roughness: 0.7, metalness: 0.1});
+            case 'dark_plastic': return new THREE.MeshStandardMaterial({color: 0x222222, roughness: 0.7, metalness: 0.1});
+            case 'port_gray': return new THREE.MeshStandardMaterial({color: 0x666666, roughness: 0.5});
+            case 'gold': return new THREE.MeshStandardMaterial({color: 0xffd700, metalness: 0.9, roughness: 0.2});
+            case 'black_void': return new THREE.MeshBasicMaterial({color: 0x000000});
+            case 'port_black': return new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.4});
+            case 'orange': return new THREE.MeshStandardMaterial({color: 0xff6600, roughness: 0.6});
             default: return new THREE.MeshBasicMaterial({color: 0xffffff});
         }
     }
@@ -553,15 +562,136 @@ class ModelFactory {
                 group.add(stepCover, topCover);
                 break;
                 
-            case 'motor':
-                const motLen = 0.52; const motRad = 0.30;
-                const cyl = new THREE.Mesh(new THREE.CylinderGeometry(motRad, motRad, motLen, 32), this.getMaterial('metal'));
-                cyl.rotation.z = Math.PI/2;
-                const box = new THREE.Mesh(new THREE.BoxGeometry(motLen, motRad*1.6, motRad*1.6), this.getMaterial('dark_metal'));
-                const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, motLen + 0.4, 8), this.getMaterial('metal'));
-                shaft.rotation.z = Math.PI/2;
-                group.add(cyl, box, shaft);
+            case 'motor': {
+                // --- NEW MOTOR DESIGN (v5) ---
+                const motLen = 0.8;
+                const motRad = 0.35;
+                const frontLen = motLen * 0.3;
+                const rearLen = motLen * 0.7;
+
+                // 1. ЗАДНЯ ЧАСТИНА (Frame Color)
+                const cylRear = new THREE.Mesh(
+                    new THREE.CylinderGeometry(motRad, motRad, rearLen, 32),
+                    this.getMaterial('frame_plastic')
+                );
+                cylRear.rotation.z = Math.PI / 2;
+                cylRear.position.x = - (frontLen / 2); 
+                group.add(cylRear);
+
+                // 2. ПЕРЕДНЯ ЧАСТИНА (Dark Gray)
+                const cylFront = new THREE.Mesh(
+                    new THREE.CylinderGeometry(motRad, motRad, frontLen, 32),
+                    this.getMaterial('dark_plastic')
+                );
+                cylFront.rotation.z = Math.PI / 2;
+                cylFront.position.x = (rearLen / 2);
+                group.add(cylFront);
+
+                // 3. ПРЯМОКУТНИК З ПЛАВНИМИ ПЕРЕХОДАМИ
+                const rectHeight = (motRad * 2.2) * 0.85; 
+                const rectDepth = motRad * 1.6;  
+                const boxMainLen = motLen * 0.6; 
+                const box = new THREE.Mesh(
+                    new THREE.BoxGeometry(boxMainLen, rectHeight, rectDepth),
+                    this.getMaterial('frame_plastic')
+                );
+                group.add(box);
+
+                // Плавні переходи (Cylinder geometry logic)
+                const slopeLen = 0.15;
+                const transitionGeo = new THREE.CylinderGeometry(motRad, Math.max(rectHeight, rectDepth)/1.6, slopeLen, 4);
+
+                const tRear = new THREE.Mesh(transitionGeo, this.getMaterial('frame_plastic'));
+                tRear.rotation.z = Math.PI / 2;
+                tRear.rotation.x = Math.PI / 4; 
+                tRear.position.x = -boxMainLen/2 - slopeLen/2;
+                tRear.scale.set(1, rectDepth/rectHeight, 1); 
+                group.add(tRear);
+
+                const tFront = new THREE.Mesh(transitionGeo, this.getMaterial('frame_plastic'));
+                tFront.rotation.z = -Math.PI / 2;
+                tFront.rotation.x = Math.PI / 4;
+                tFront.position.x = boxMainLen/2 + slopeLen/2;
+                tFront.scale.set(1, rectDepth/rectHeight, 1);
+                group.add(tFront);
+
+                // 4. ВАЛ (Shaft) - Оранжевий і короткий
+                const shaftLen = 0.4 * 0.2; 
+                const shaft = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.045, 0.045, shaftLen, 16),
+                    this.getMaterial('orange') 
+                );
+                shaft.rotation.z = Math.PI / 2;
+                shaft.position.x = motLen / 2 + shaftLen / 2; 
+                group.add(shaft);
+
+                // 5. 4 ОТВОРИ
+                const holeRad = 0.03;
+                const holeDistance = 0.20; 
+                const holesGroup = new THREE.Group();
+                holesGroup.position.x = motLen / 2;
+                
+                for (let i = 0; i < 4; i++) {
+                    const angle = i * Math.PI / 2; 
+                    const hole = new THREE.Mesh(
+                        new THREE.CylinderGeometry(holeRad, holeRad, 0.05, 16),
+                        this.getMaterial('port_black') 
+                    );
+                    hole.rotation.z = Math.PI / 2;
+                    hole.position.y = holeDistance * Math.cos(angle);
+                    hole.position.z = holeDistance * Math.sin(angle);
+                    hole.position.x = 0.01; 
+                    holesGroup.add(hole);
+                }
+                group.add(holesGroup);
+
+                // 6. ПОРТ ПІДКЛЮЧЕННЯ (RJ45) - ЗЗАДУ (FIXED: Moved UP and Resized)
+                const portGroup = new THREE.Group();
+                // Move UP: Y = 0.2 (Above axle which is at 0)
+                portGroup.position.set(-motLen/2, 0.2, 0); 
+                portGroup.rotation.y = Math.PI; // Розвертаємо назад
+                
+                // Updated Dimensions
+                const pHeight = 0.1;   // Reduced by 50%
+                const pWidth = 0.275;  // Increased by 10%
+                const pDepth = 0.2;    // Original depth
+
+                // Корпус порту
+                const portBody = new THREE.Mesh(
+                    new THREE.BoxGeometry(pDepth, pHeight, pWidth), 
+                    this.getMaterial('port_gray') 
+                );
+                portBody.position.x = 0.05; 
+                portGroup.add(portBody);
+
+                // Внутрішня "дірка"
+                const portHole = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.05, pHeight * 0.6, pWidth * 0.7),
+                    this.getMaterial('black_void')
+                );
+                portHole.position.x = 0.13; 
+                portGroup.add(portHole);
+
+                // Золоті контакти
+                const pinGeo = new THREE.BoxGeometry(0.01, 0.02, 0.015);
+                const pinCount = 8;
+                const pinSpacing = (pWidth * 0.5) / pinCount;
+                for(let k=0; k<pinCount; k++) {
+                    const pin = new THREE.Mesh(pinGeo, this.getMaterial('gold'));
+                    pin.position.z = -((pinCount-1)*pinSpacing)/2 + k * pinSpacing;
+                    pin.position.y = -pHeight * 0.25; 
+                    pin.position.x = 0.13; 
+                    portGroup.add(pin);
+                }
+                
+                // Засувка
+                const latch = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.06), this.getMaterial('black_void'));
+                latch.position.set(0.13, pHeight * 0.25, 0);
+                portGroup.add(latch);
+
+                group.add(portGroup);
                 break;
+            }
 
             case 'sensor':
                 const sPlate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.1), this.getMaterial('sensor_body'));
@@ -648,7 +778,8 @@ class SceneGraph {
         });
 
         const axMat = new THREE.MeshStandardMaterial({color:0x888888});
-        const axGeo = new THREE.CylinderGeometry(0.08, 0.08, 2.9, 12); 
+        // --- ЗМЕНШЕНИЙ РАДІУС ВАЛІВ (0.04) ---
+        const axGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.9, 12); 
         const fAxle = new THREE.Mesh(axGeo, axMat); fAxle.rotation.z = Math.PI/2; fAxle.position.set(0, 0, -1.2); this.worldRoot.add(fAxle);
         const bAxle = new THREE.Mesh(axGeo, axMat); bAxle.rotation.z = Math.PI/2; bAxle.position.set(0, 0, 1.2); this.worldRoot.add(bAxle);
         const stub = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8);
@@ -733,8 +864,12 @@ class GameLogic {
         this.createSnap('battery', new THREE.Vector3(0.2, -0.1, 0.8), 'BOT');
         this.createSnap('battery', new THREE.Vector3(-0.2, -0.1, 0.8), 'BOT');
         this.createSnap('cover_green', new THREE.Vector3(0, 0.50, 0), 'TOP');
-        this.createSnap('motor', new THREE.Vector3(0, 0.25, 1.4), 'TOP');
-        this.createSnap('motor', new THREE.Vector3(0, 0.25, -0.6), 'TOP');
+        
+        // --- NEW MOTOR SNAPS (DIAGONAL: Front Right & Rear Left) ---
+        // Moved inward from 0.7 to 0.58 to stay within frame bounds but clear center beam
+        this.createSnap('motor', new THREE.Vector3(0.58, 0, -1.2), 'TOP'); // Front Right
+        this.createSnap('motor', new THREE.Vector3(-0.58, 0, 1.2), 'TOP'); // Rear Left
+        
         this.createSnap('sensor', new THREE.Vector3(0, 0.95, 1.8), 'TOP');
 
         this.spawnLooseParts();
@@ -745,6 +880,11 @@ class GameLogic {
         const snap = new THREE.Group();
         snap.position.copy(pos);
         
+        // --- AUTO-ROTATE LEFT MOTORS ---
+        if (type === 'motor' && pos.x < 0) {
+            snap.rotation.y = Math.PI;
+        }
+
         let ghostGeo;
         if(type === 'gear') ghostGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.05, 16); 
         else if(type === 'wheel') ghostGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.25, 16);
@@ -890,9 +1030,10 @@ class GameLogic {
         
         if (part.userData.type === 'gear') {
             part.rotation.set(0, Math.PI/2, 0);
-        } else if (['wheel', 'motor', 'sensor'].includes(part.userData.type)) {
+        } else if (['wheel', 'sensor'].includes(part.userData.type)) {
             part.rotation.set(0, 0, 0); 
         } else {
+            // For motors and cover, respect snap rotation
             part.rotation.copy(snap.rotation);
         }
 
