@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>TNTU ENGINEERING SUITE v10.35 [FINAL STABLE]</title>
+    <title>TNTU ENGINEERING SUITE v10.39 [CAMERA FIX]</title>
     
     <style>
         :root {
@@ -218,25 +218,21 @@
 <script>
 /**
  * ============================================================================
- * TNTU ENGINEERING SUITE v10.35 [FINAL STABLE]
- * - CRITICAL FIX: VideoProcessor removed completely.
- * - OPTIMIZATION: MediaPipe uses direct video stream.
- * - LIGHT CHECK: Separate Low-Cost check (1/sec) updating text color.
+ * TNTU ENGINEERING SUITE v10.39 [CAMERA FIX]
+ * - FIXED: Removed call to deleted VideoProcessor in Application constructor/start.
+ * - INPUT: Mechanics from v9.9 (Rotation: 3 fingers, Grab: Pinch).
+ * - LIGHT: Checks every 1.5s via SimpleBrightnessCheck.
  * ============================================================================
  */
 
-// --- ЛЕГКА ПЕРЕВІРКА ЯСКРАВОСТІ (1 РАЗ НА СЕКУНДУ) ---
+// --- ЛЕГКА ПЕРЕВІРКА ЯСКРАВОСТІ (1 РАЗ НА 1.5 СЕКУНДИ) ---
 class SimpleBrightnessCheck {
     constructor() {
         this.canvas = document.createElement('canvas');
         this.canvas.width = 160;
         this.canvas.height = 120;
-        
-        this.ctx = this.canvas.getContext('2d', {
-            willReadFrequently: true
-        });
-
-        this.interval = 1000; // 1 раз на секунду
+        this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+        this.interval = 1500;
         this.lastCheck = 0;
         this.lastLevel = null;
     }
@@ -246,41 +242,34 @@ class SimpleBrightnessCheck {
         if (now - this.lastCheck < this.interval) return null;
         this.lastCheck = now;
 
-        // Малюємо маленький кадр для аналізу
         this.ctx.drawImage(video, 0, 0, 160, 120);
         const data = this.ctx.getImageData(0, 0, 160, 120).data;
 
         let sum = 0;
-        // Читаємо пікселі з кроком для швидкості
         for (let i = 0; i < data.length; i += 16) {
             sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
         }
 
         const avg = sum / (data.length / 16);
-
         let level;
-        if (avg < 60) level = 'red';       // Темно
-        else if (avg < 110) level = 'yellow'; // Так собі
-        else level = 'green';              // Чудово
+        if (avg < 60) level = 'red';
+        else if (avg < 110) level = 'yellow';
+        else level = 'green';
 
-        // Оновлюємо тільки якщо стан змінився
         if (level === this.lastLevel) return null;
-
         this.lastLevel = level;
         return level;
     }
 }
 
-// Функція оновлення UI (без створення нових елементів)
 function updateCounterColor(level) {
     const el = document.getElementById('part-counter');
     if (!el) return;
-
     el.classList.remove('green', 'yellow', 'red');
     el.classList.add(level);
 }
 
-// ... [STANDARD CONFIGURATION] ...
+// ... [CONFIG FROM v9.9] ...
 const TEXTURE_URLS = {
     TOP: 'photo/top.jpg',
     SIDE_LONG: 'photo/side_long.jpg',
@@ -290,20 +279,19 @@ const TEXTURE_URLS = {
 const CONFIG = {
     RENDER: { FOV: 60, NEAR_CLIP: 0.01, FAR_CLIP: 1000 },
     PHYSICS: {
-        ROTATION_SPEED: 0.6, 
-        LERP_FACTOR: 0.2, 
+        ROTATION_SPEED: 0.9, 
+        LERP_FACTOR: 0.4, 
         SNAP_DISTANCE: 0.8,
-        GRAB_RADIUS: 1.5,
-        BOB_SPEED: 2.0, 
-        BOB_HEIGHT: 0.1, 
+        GRAB_RADIUS: 1.2,
+        BOB_SPEED: 1.5, 
+        BOB_HEIGHT: 0.05, 
         REARRANGE_SPEED: 0.08,
         DISPENSER_COOLDOWN: 5000,
         ROTATION_SNAP_DEG: 15,
-        MAGNET_RADIUS: 0.15 
+        MAGNET_RADIUS: 0.3 
     },
     INPUT: {
-        PINCH_THRESHOLD: 0.05,
-        STABILITY_FRAMES: 8,
+        PINCH_THRESHOLD: 0.04, 
         CURSOR_SENSITIVITY: 1.45,
         FILTER_FREQUENCY: 60,
         FILTER_MIN_CUTOFF: 1.0,
@@ -975,8 +963,8 @@ class InputSystem {
             lastPos: new THREE.Vector3(),
             grabbedObject: null,
             potentialSnap: null,
-            pinchFrames: 0,
-            openHandFrames: 0,
+            // pinchFrames: 0,  <- REMOVED FOR v9.9 LOGIC
+            // openHandFrames: 0, <- REMOVED FOR v9.9 LOGIC
             thumbsUpFrames: 0
         };
     }
@@ -985,6 +973,23 @@ class InputSystem {
         const dTip = Math.sqrt(Math.pow(wrist.x - tip.x, 2) + Math.pow(wrist.y - tip.y, 2));
         const dLower = Math.sqrt(Math.pow(wrist.x - lowerJoint.x, 2) + Math.pow(wrist.y - lowerJoint.y, 2));
         return dTip > dLower * 1.2;
+    }
+
+    // --- LOGIC FROM v9.9 (Exact Reimplementation) ---
+    checkTrianglePose(landmarks, asp) {
+        // v9.9 used CONFIG.INPUT.PINCH_THRESHOLD_START which was 0.04
+        // In this file we set CONFIG.INPUT.PINCH_THRESHOLD = 0.04 to match.
+        const threshold = CONFIG.INPUT.PINCH_THRESHOLD;
+
+        const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
+        const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
+        const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
+
+        const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
+        const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
+        
+        // v9.9 logic: Thumb, Index, Middle straight AND spread apart > threshold
+        return thumbStraight && indexStraight && middleStraight && dIndexMiddle > threshold && dThumbIndex > threshold;
     }
 
     isThumbsUpPose(landmarks) {
@@ -1028,7 +1033,7 @@ class InputSystem {
             const dist = Math.sqrt(Math.pow((h1.x - h2.x) * asp, 2) + Math.pow(h1.y - h2.y, 2));
 
             if (this.dualZoom.lastDist > 0) {
-                const delta = (dist - this.dualZoom.lastDist) * 5.0; 
+                const delta = (dist - this.dualZoom.lastDist) * 20.0; 
                 
                 if (this.game.app && this.game.app.camera) {
                     let newZ = this.game.app.camera.position.z - delta;
@@ -1087,75 +1092,66 @@ class InputSystem {
             return;
         }
 
-        const thumbStraight = this.isStraight(landmarks[0], landmarks[4], landmarks[3]);
-        const indexStraight = this.isStraight(landmarks[0], landmarks[8], landmarks[5]);
-        const middleStraight = this.isStraight(landmarks[0], landmarks[12], landmarks[9]);
-        const ringStraight = this.isStraight(landmarks[0], landmarks[16], landmarks[13]);
-        const pinkyStraight = this.isStraight(landmarks[0], landmarks[20], landmarks[17]);
-
-        const dIndexMiddle = Math.sqrt(Math.pow((landmarks[12].x - landmarks[8].x) * asp, 2) + Math.pow(landmarks[12].y - landmarks[8].y, 2));
+        // --- v9.9 LOGIC IMPLEMENTATION START ---
+        
+        // 1. Calculate distances
         const dThumbIndex = Math.sqrt(Math.pow((landmarks[8].x - landmarks[4].x) * asp, 2) + Math.pow(landmarks[8].y - landmarks[4].y, 2));
-        const pinchThreshold = CONFIG.INPUT.PINCH_THRESHOLD;
+        const pinchThreshold = CONFIG.INPUT.PINCH_THRESHOLD; // 0.04
 
-        const isPinch = dThumbIndex < pinchThreshold;
-        const isOpenHand = thumbStraight && indexStraight && middleStraight && dIndexMiddle > pinchThreshold && dThumbIndex > pinchThreshold;
-        
-        state.pinchFrames = isPinch ? state.pinchFrames + 1 : 0;
-        state.openHandFrames = isOpenHand ? state.openHandFrames + 1 : 0;
-        
-        const STABLE = CONFIG.INPUT.STABILITY_FRAMES;
-        const intentPinch = state.pinchFrames > STABLE;
-        const intentOpenHand = state.openHandFrames > STABLE;
+        // 2. Determine state directly (Instant, NO frames counter)
+        let newMode = MODE.IDLE;
 
-        switch (state.mode) {
-            case MODE.IDLE:
-            case MODE.ZOOM: 
-                this.sg.updateCursorState(index, pos, 0); 
-                
-                if (intentPinch) {
-                    if (this.tryStartGrab(state, pos, camera, index)) {
-                        state.mode = MODE.GRAB;
-                        state.lastPos.copy(pos);
-                    }
-                } else if (intentOpenHand) {
-                    state.mode = MODE.ROTATE;
-                    state.lastPos.copy(pos);
-                    Audio.sfxHover();
-                }
-                break;
-
-            case MODE.GRAB:
-                this.sg.updateCursorState(index, pos, 1); 
-                
-                if (!intentPinch) {
-                    this.endGrab(state);
-                    state.mode = MODE.IDLE;
-                } else {
-                    this.handleDrag(state, pos);
-                }
-                break;
-
-            case MODE.ROTATE:
-                this.sg.updateCursorState(index, pos, 2); 
-                
-                if (!intentOpenHand) {
-                    this.finalizeRotation(); 
-                    state.mode = MODE.IDLE;
-                } else {
-                    this.handleRotation(state, pos);
-                }
-                break;
+        // ROTATE MODE: Open Triangle Gesture
+        if (this.checkTrianglePose(landmarks, asp)) {
+            newMode = MODE.ROTATE;
+        }
+        // GRAB MODE: Pinch
+        else if (dThumbIndex < pinchThreshold) {
+            newMode = MODE.GRAB;
         }
 
+        // 3. Handle State Transitions
+        this.sg.updateCursorState(index, pos, newMode);
+
+        if (newMode === MODE.ROTATE) {
+            if (state.mode !== MODE.ROTATE) {
+                // Just started rotating
+                state.lastPos.copy(pos);
+                Audio.sfxHover();
+            } else {
+                // Continuing rotation
+                this.handleRotation(state, pos);
+            }
+            // If we were grabbing, drop it
+            if (state.grabbedObject) this.endGrab(state);
+        }
+        else if (newMode === MODE.GRAB) {
+            if (state.mode !== MODE.GRAB) {
+                // Just started grabbing
+                this.tryStartGrab(state, pos, camera, index);
+            } else if (state.grabbedObject) {
+                // Continuing grab
+                this.handleDrag(state, pos);
+            }
+        }
+        else {
+            // Idle
+            if (state.mode === MODE.GRAB && state.grabbedObject) {
+                this.endGrab(state);
+            }
+        }
+
+        state.mode = newMode;
         state.handPos.copy(pos);
+        // --- v9.9 LOGIC IMPLEMENTATION END ---
     }
 
     finalizeRotation() {
+        // Not used in v9.9 continuous logic, but kept for cleanup if needed
         const step = THREE.MathUtils.degToRad(CONFIG.PHYSICS.ROTATION_SNAP_DEG);
         const root = this.sg.worldRoot;
         root.rotation.x = Math.round(root.rotation.x / step) * step;
         root.rotation.y = Math.round(root.rotation.y / step) * step;
-        Audio.sfxHover();
     }
 
     tryStartGrab(state, pos, camera, handIndex) {
